@@ -26,7 +26,7 @@ export function RunSplitDetailModal({
   showTargetPaceOverlay = false,
   targetPaceSecondsPerMile = 390,
   onClose
-}: RunSplitDetailModalProps): JSX.Element {
+}: RunSplitDetailModalProps): JSX.Element | null {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {

@@ -1,5 +1,5 @@
 import { useRef, useState, type MouseEvent } from "react";
-import { addDays, fromIsoDate, getWeekStartIso, toIsoDate } from "../lib/dateUtils";
+import { addDays, fromIsoDate, toIsoDate } from "../lib/dateUtils";
 import type { ProgressGranularity, WeeklyProgressPoint } from "../lib/weeklyProgress";
 
 export type ChartMode = "line" | "bar";

@@ -21,7 +21,7 @@ export function RunSplitMiniChart({
   splits,
   showTargetPaceOverlay = false,
   targetPaceSecondsPerMile = 390
-}: RunSplitMiniChartProps): JSX.Element {
+}: RunSplitMiniChartProps): JSX.Element | null {
   if (splits.length === 0) {
     return null;
   }
