@@ -78,18 +78,34 @@ export function saveAppState(state: PersistedAppState): void {
   }
 
   saveTimeout = setTimeout(() => {
-    const latest = queuedEnvelope;
     saveTimeout = null;
-    queuedEnvelope = null;
-    if (!latest) {
+    flushQueuedEnvelope(storage);
+  }, SAVE_DELAY_MS);
+}
+
+export function flushAppState(state?: PersistedAppState): void {
+  const storage = getStorage();
+  if (!storage) {
+    return;
+  }
+
+  if (state) {
+    const sanitized = sanitizePersistedState(state);
+    if (!sanitized) {
       return;
     }
-    try {
-      storage.setItem(STORAGE_KEY, JSON.stringify(latest));
-    } catch {
-      // Ignore quota or storage access failures.
-    }
-  }, SAVE_DELAY_MS);
+    queuedEnvelope = {
+      version: STORAGE_VERSION,
+      state: sanitized
+    };
+  }
+
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+  }
+
+  flushQueuedEnvelope(storage);
 }
 
 function sanitizePersistedState(state: Partial<PersistedAppState>): PersistedAppState | null {
@@ -147,6 +163,9 @@ function sanitizeSchedule(schedule: unknown): TrainingSchedule | null {
   const name = typeof value.name === "string" ? value.name : "Saved Plan";
   const plannedMilesByDate = sanitizeNumberRecord(value.plannedMilesByDate);
   const descriptionByDate = sanitizeStringRecord(value.descriptionByDate);
+  if (Object.keys(plannedMilesByDate).length === 0) {
+    return null;
+  }
   const weekStarts = Object.keys(plannedMilesByDate)
     .map((isoDate) => getWeekStartFromIso(isoDate))
     .sort();
@@ -291,4 +310,17 @@ function getStorage(): Storage | null {
     return null;
   }
   return window.localStorage;
+}
+
+function flushQueuedEnvelope(storage: Storage): void {
+  const latest = queuedEnvelope;
+  queuedEnvelope = null;
+  if (!latest) {
+    return;
+  }
+  try {
+    storage.setItem(STORAGE_KEY, JSON.stringify(latest));
+  } catch {
+    // Ignore quota or storage access failures.
+  }
 }

@@ -11,7 +11,7 @@ import { defaultSchedule } from "./data/defaultSchedule";
 import { runSplitsByDate as defaultRunSplitsByDate } from "./data/runSplitsData";
 import { addDays, fromIsoDate, getWeekDates, getWeekStartIso, normalizeWeekStartIso, toIsoDate } from "./lib/dateUtils";
 import { redistributeWeekMiles } from "./lib/redistribute";
-import { loadAppState, saveAppState } from "./lib/storage";
+import { flushAppState, loadAppState, saveAppState } from "./lib/storage";
 import {
   buildDailyProgress,
   buildWeeklyProgress,
@@ -76,6 +76,11 @@ function parsePaceToSeconds(value: string): number | null {
   return minutes * 60 + seconds;
 }
 
+function formatMilesValue(miles: number): string {
+  const rounded = Math.round(Math.max(0, miles) * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
 function mergeRunSplitsForDoubleRun(existingSplits: MileSplitPoint[], uploadedSplits: MileSplitPoint[]): MileSplitPoint[] {
   if (existingSplits.length === 0) {
     return uploadedSplits;
@@ -125,6 +130,8 @@ export default function App(): JSX.Element {
   const [uploadedRunSplitsByDate, setUploadedRunSplitsByDate] = useState<Record<string, MileSplitPoint[]>>(
     hydratedState?.uploadedRunSplitsByDate ?? {}
   );
+  const [pendingManualUploadMessage, setPendingManualUploadMessage] = useState<string | null>(null);
+  const [manualUploadPersistedMessage, setManualUploadPersistedMessage] = useState<string>("");
   const [activeMainTab, setActiveMainTab] = useState<MainTab>("weekly");
   const [isUtilitiesOpen, setIsUtilitiesOpen] = useState(false);
 
@@ -172,9 +179,8 @@ export default function App(): JSX.Element {
     () => buildWeeklyActualDataRows(weeklyProgress, mergedRunSplitsByDate, actualsByDate, todayIso),
     [weeklyProgress, mergedRunSplitsByDate, actualsByDate, todayIso]
   );
-
-  useEffect(() => {
-    saveAppState({
+  const persistedState = useMemo(
+    () => ({
       activeSchedule,
       actualsByDate,
       completedRunDescriptionByDate,
@@ -191,25 +197,63 @@ export default function App(): JSX.Element {
       uploadedRunSplitsByDate,
       monthDateIso: toIsoDate(new Date(monthDate.getFullYear(), monthDate.getMonth(), 1)),
       selectedWeekStartIso
-    });
-  }, [
-    activeSchedule,
-    actualsByDate,
-    completedRunDescriptionByDate,
-    weeklyTargetOverrides,
-    raceDateIso,
-    workoutByDate,
-    otherByDate,
-    chartMode,
-    showActual,
-    timeframe,
-    chartGranularity,
-    showTargetPaceOverlay,
-    targetPaceSecondsPerMile,
-    uploadedRunSplitsByDate,
-    monthDate,
-    selectedWeekStartIso
-  ]);
+    }),
+    [
+      activeSchedule,
+      actualsByDate,
+      completedRunDescriptionByDate,
+      weeklyTargetOverrides,
+      raceDateIso,
+      workoutByDate,
+      otherByDate,
+      chartMode,
+      showActual,
+      timeframe,
+      chartGranularity,
+      showTargetPaceOverlay,
+      targetPaceSecondsPerMile,
+      uploadedRunSplitsByDate,
+      monthDate,
+      selectedWeekStartIso
+    ]
+  );
+
+  useEffect(() => {
+    saveAppState(persistedState);
+  }, [persistedState]);
+
+  useEffect(() => {
+    const flushLatestState = (): void => {
+      flushAppState(persistedState);
+    };
+    const handleVisibilityChange = (): void => {
+      if (document.visibilityState === "hidden") {
+        flushLatestState();
+      }
+    };
+    window.addEventListener("beforeunload", flushLatestState);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("beforeunload", flushLatestState);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [persistedState]);
+
+  useEffect(() => {
+    if (!pendingManualUploadMessage) {
+      return;
+    }
+    flushAppState(persistedState);
+    setManualUploadPersistedMessage(`${pendingManualUploadMessage} Saved on this device.`);
+    setPendingManualUploadMessage(null);
+  }, [pendingManualUploadMessage, persistedState]);
+
+  useEffect(() => {
+    if (hydratedState != null) {
+      return;
+    }
+    flushAppState(persistedState);
+  }, [hydratedState, persistedState]);
 
   return (
     <main className="appShell">
@@ -314,7 +358,9 @@ export default function App(): JSX.Element {
             <div className="utilityItem">
               <ActivityUpload
                 compact
+                persistedStatusMessage={manualUploadPersistedMessage}
                 onActivityParsed={({ selectedDateIso, doubleRun, parsed }: ActivityUploadPayload) => {
+                  setManualUploadPersistedMessage("");
                   setActualsByDate((current) => {
                     const currentMiles = clampPositive(current[selectedDateIso] ?? 0);
                     const nextMiles = doubleRun ? currentMiles + parsed.totalMiles : parsed.totalMiles;
@@ -336,6 +382,9 @@ export default function App(): JSX.Element {
                         : parsed.splitPoints
                     };
                   });
+                  setPendingManualUploadMessage(
+                    `Imported ${formatMilesValue(parsed.totalMiles)} miles for ${selectedDateIso} (${doubleRun ? "double run" : "replace"} mode).`
+                  );
                 }}
               />
             </div>
@@ -595,32 +644,52 @@ function buildWeeklyActualDataRows(
       paceByWeek[weekStartIso].points += 1;
     });
   });
+  const scheduleWeekStarts = weeklyPoints
+    .map((point) => point.weekStart)
+    .filter((weekStart) => weekStart <= todayWeekStartIso);
+  const actualWeekStarts = Object.keys(actualsByDate)
+    .map((isoDate) => getWeekStartIso(fromIsoDate(isoDate)))
+    .filter((weekStart) => weekStart <= todayWeekStartIso);
+  const splitWeekStarts = Object.keys(splitsByDate)
+    .map((isoDate) => getWeekStartIso(fromIsoDate(isoDate)))
+    .filter((weekStart) => weekStart <= todayWeekStartIso);
+  const allWeekStarts = Array.from(new Set([...scheduleWeekStarts, ...actualWeekStarts, ...splitWeekStarts])).sort();
 
-  return weeklyPoints
-    .filter((point) => point.weekStart <= todayWeekStartIso)
-    .map((point, index, filteredPoints) => {
-    const currentPaceStats = paceByWeek[point.weekStart];
-    const previousPoint = index > 0 ? filteredPoints[index - 1] : null;
-    const previousPaceStats = previousPoint ? paceByWeek[previousPoint.weekStart] : undefined;
+  const rowsChronological = allWeekStarts.map((weekStartIso) => {
+    const dayActuals: Array<number | null> = getWeekDates(weekStartIso).map((isoDate) => {
+      const value = actualsByDate[isoDate];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+      }
+      const splitMiles = splitsByDate[isoDate]?.length ?? 0;
+      return splitMiles > 0 ? splitMiles : null;
+    });
+    const totalActualMiles = dayActuals.reduce((sum: number, miles) => sum + (miles ?? 0), 0);
+    const currentPaceStats = paceByWeek[weekStartIso];
     const averagePaceSecondsPerMile =
       currentPaceStats && currentPaceStats.points > 0 ? currentPaceStats.totalSeconds / currentPaceStats.points : null;
-    const previousAveragePaceSecondsPerMile =
-      previousPaceStats && previousPaceStats.points > 0 ? previousPaceStats.totalSeconds / previousPaceStats.points : null;
+    return {
+      weekStartIso,
+      dayActuals,
+      totalActualMiles,
+      avgPaceSecondsPerMile: averagePaceSecondsPerMile
+    };
+  });
 
+  return rowsChronological
+    .map((row, index) => {
+      const previousRow = index > 0 ? rowsChronological[index - 1] : null;
       return {
-      weekStartIso: point.weekStart,
-      dayActuals: getWeekDates(point.weekStart).map((isoDate) => {
-        const value = actualsByDate[isoDate];
-        return Number.isFinite(value) ? value : null;
-      }),
-      totalActualMiles: point.actualTotal,
-      mileageDelta: previousPoint ? point.actualTotal - previousPoint.actualTotal : null,
-      avgPaceSecondsPerMile: averagePaceSecondsPerMile,
-      // Positive means faster this week (lower pace is better).
-      paceDeltaSeconds:
-        previousAveragePaceSecondsPerMile != null && averagePaceSecondsPerMile != null
-          ? previousAveragePaceSecondsPerMile - averagePaceSecondsPerMile
-          : null
+        weekStartIso: row.weekStartIso,
+        dayActuals: row.dayActuals,
+        totalActualMiles: row.totalActualMiles,
+        mileageDelta: previousRow ? row.totalActualMiles - previousRow.totalActualMiles : null,
+        avgPaceSecondsPerMile: row.avgPaceSecondsPerMile,
+        // Positive means faster this week (lower pace is better).
+        paceDeltaSeconds:
+          previousRow?.avgPaceSecondsPerMile != null && row.avgPaceSecondsPerMile != null
+            ? previousRow.avgPaceSecondsPerMile - row.avgPaceSecondsPerMile
+            : null
       };
     })
     .reverse();

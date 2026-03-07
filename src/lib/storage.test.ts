@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadAppState, saveAppState, type PersistedAppState } from "./storage";
+import { flushAppState, loadAppState, saveAppState, type PersistedAppState } from "./storage";
 
 const sampleState: PersistedAppState = {
   activeSchedule: {
@@ -113,5 +113,55 @@ describe("storage", () => {
     expect(storage.setItem).not.toHaveBeenCalled();
     vi.advanceTimersByTime(221);
     expect(storage.setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("flushes queued state immediately", () => {
+    vi.useFakeTimers();
+    const storage = createStorageMock();
+    vi.stubGlobal("window", { localStorage: storage });
+
+    saveAppState(sampleState);
+    expect(storage.setItem).not.toHaveBeenCalled();
+    flushAppState();
+    expect(storage.setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads uploaded split and completed run data from saved state", () => {
+    const storage = createStorageMock();
+    storage.setItem(
+      "marathon-planner-state",
+      JSON.stringify({
+        version: 1,
+        state: sampleState
+      })
+    );
+    vi.stubGlobal("window", { localStorage: storage });
+
+    const loaded = loadAppState();
+    expect(loaded?.actualsByDate["2026-03-02"]).toBe(3.5);
+    expect(loaded?.completedRunDescriptionByDate["2026-03-02"]).toContain("Pace");
+    expect(loaded?.uploadedRunSplitsByDate["2026-03-02"]?.length).toBe(2);
+  });
+
+  it("rejects malformed schedules instead of partially hydrating", () => {
+    const storage = createStorageMock();
+    storage.setItem(
+      "marathon-planner-state",
+      JSON.stringify({
+        version: 1,
+        state: {
+          ...sampleState,
+          activeSchedule: {
+            name: "Broken",
+            weeks: [],
+            plannedMilesByDate: {},
+            descriptionByDate: {}
+          }
+        }
+      })
+    );
+    vi.stubGlobal("window", { localStorage: storage });
+
+    expect(loadAppState()).toBeNull();
   });
 });

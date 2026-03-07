@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toIsoDate } from "../lib/dateUtils";
 import { parseActivityCsv, type ActivityCsvImport } from "../lib/activityCsv";
 import type { IsoDateString } from "../types/schedule";
@@ -12,9 +12,14 @@ interface ActivityUploadPayload {
 interface ActivityUploadProps {
   onActivityParsed: (payload: ActivityUploadPayload) => void;
   compact?: boolean;
+  persistedStatusMessage?: string;
 }
 
-export function ActivityUpload({ onActivityParsed, compact = false }: ActivityUploadProps): JSX.Element {
+export function ActivityUpload({
+  onActivityParsed,
+  compact = false,
+  persistedStatusMessage
+}: ActivityUploadProps): JSX.Element {
   const [selectedDateIso, setSelectedDateIso] = useState<IsoDateString>(toIsoDate(new Date()));
   const [doubleRun, setDoubleRun] = useState<boolean>(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -24,6 +29,14 @@ export function ActivityUpload({ onActivityParsed, compact = false }: ActivityUp
   );
   const [error, setError] = useState<string>("");
   const wrapperClassName = compact ? "uploadPanel uploadPanelCompact" : "panel uploadPanel";
+
+  useEffect(() => {
+    if (!persistedStatusMessage) {
+      return;
+    }
+    setError("");
+    setStatus(persistedStatusMessage);
+  }, [persistedStatusMessage]);
 
   return (
     <section className={wrapperClassName}>
