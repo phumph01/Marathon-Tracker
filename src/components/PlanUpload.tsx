@@ -5,9 +5,10 @@ import type { TrainingSchedule } from "../types/schedule";
 interface PlanUploadProps {
   onScheduleParsed: (schedule: TrainingSchedule) => void;
   compact?: boolean;
+  disabled?: boolean;
 }
 
-export function PlanUpload({ onScheduleParsed, compact = false }: PlanUploadProps): JSX.Element {
+export function PlanUpload({ onScheduleParsed, compact = false, disabled = false }: PlanUploadProps): JSX.Element {
   const [status, setStatus] = useState<string>("Upload a CSV plan to replace the sample schedule.");
   const [error, setError] = useState<string>("");
   const wrapperClassName = compact ? "uploadPanel uploadPanelCompact" : "panel uploadPanel";
@@ -22,7 +23,11 @@ export function PlanUpload({ onScheduleParsed, compact = false }: PlanUploadProp
           className="glassInput"
           type="file"
           accept=".csv,text/csv"
+          disabled={disabled}
           onChange={async (event) => {
+            if (disabled) {
+              return;
+            }
             const file = event.target.files?.[0];
             if (!file) {
               return;
@@ -45,6 +50,7 @@ export function PlanUpload({ onScheduleParsed, compact = false }: PlanUploadProp
         />
       </div>
       <p className="uploadStatus">{status}</p>
+      {disabled ? <p className="uploadStatus">Sign in as owner to upload.</p> : null}
       {error ? <p className="uploadError">{error}</p> : null}
     </section>
   );

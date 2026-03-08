@@ -154,6 +154,10 @@ function sanitizePersistedState(state: Partial<PersistedAppState>): PersistedApp
   };
 }
 
+export function sanitizePersistedAppState(state: Partial<PersistedAppState>): PersistedAppState | null {
+  return sanitizePersistedState(state);
+}
+
 function sanitizeSchedule(schedule: unknown): TrainingSchedule | null {
   if (!schedule || typeof schedule !== "object") {
     return null;

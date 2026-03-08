@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { ActivityUpload, type ActivityUploadPayload } from "./components/ActivityUpload";
 import { ActualDataSection, type WeeklyActualDataRow } from "./components/ActualDataSection";
+import { AuthPanel } from "./components/AuthPanel";
 import { FitnessInsightsTab } from "./components/FitnessInsightsTab";
 import { GarminUpload } from "./components/GarminUpload";
 import { MonthlyCalendar } from "./components/MonthlyCalendar";
@@ -11,7 +13,18 @@ import { defaultSchedule } from "./data/defaultSchedule";
 import { runSplitsByDate as defaultRunSplitsByDate } from "./data/runSplitsData";
 import { addDays, fromIsoDate, getWeekDates, getWeekStartIso, normalizeWeekStartIso, toIsoDate } from "./lib/dateUtils";
 import { redistributeWeekMiles } from "./lib/redistribute";
-import { flushAppState, loadAppState, saveAppState } from "./lib/storage";
+import { flushAppState, loadAppState, saveAppState, type PersistedAppState } from "./lib/storage";
+import {
+  getCurrentSession,
+  importLocalStateIfCloudEmpty,
+  isOwnerSession,
+  loadCloudState,
+  saveCloudState,
+  signInWithEmailPassword,
+  signOutSession,
+  subscribeAuthStateChanged
+} from "./lib/cloudState";
+import { getOwnerUid, isSupabaseConfigured } from "./lib/supabaseClient";
 import {
   buildDailyProgress,
   buildWeeklyProgress,
@@ -134,6 +147,14 @@ export default function App(): JSX.Element {
   const [manualUploadPersistedMessage, setManualUploadPersistedMessage] = useState<string>("");
   const [activeMainTab, setActiveMainTab] = useState<MainTab>("weekly");
   const [isUtilitiesOpen, setIsUtilitiesOpen] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authError, setAuthError] = useState<string>("");
+  const [authStatus, setAuthStatus] = useState<string>("");
+  const [cloudHydrated, setCloudHydrated] = useState(false);
+  const isOwner = isOwnerSession(session);
+  const ownerUid = getOwnerUid();
+  const cloudConfigured = isSupabaseConfigured();
+  const isReadOnly = !isOwner;
 
   const weekDates = useMemo(() => getWeekDates(selectedWeekStartIso), [selectedWeekStartIso]);
   const originalPlannedWeek = useMemo(() => getOriginalWeekMiles(weekDates, activeSchedule), [activeSchedule, weekDates]);
@@ -218,6 +239,75 @@ export default function App(): JSX.Element {
     ]
   );
 
+  const applyPersistedState = (state: PersistedAppState): void => {
+    setActiveSchedule(state.activeSchedule);
+    setActualsByDate(state.actualsByDate);
+    setCompletedRunDescriptionByDate(state.completedRunDescriptionByDate);
+    setWeeklyTargetOverrides(state.weeklyTargetOverrides);
+    setRaceDateIso(state.raceDateIso);
+    setWorkoutByDate(state.workoutByDate);
+    setOtherByDate(state.otherByDate);
+    setChartMode(state.chartMode);
+    setShowActual(state.showActual);
+    setTimeframe(state.timeframe);
+    setChartGranularity(state.chartGranularity);
+    setShowTargetPaceOverlay(state.showTargetPaceOverlay);
+    setTargetPaceSecondsPerMile(state.targetPaceSecondsPerMile);
+    setTargetPaceInput(formatPace(state.targetPaceSecondsPerMile));
+    setUploadedRunSplitsByDate(state.uploadedRunSplitsByDate);
+    setMonthDate(fromIsoDate(state.monthDateIso));
+    setSelectedWeekStartIso(normalizeWeekStartIso(state.selectedWeekStartIso));
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const unsubscribe = subscribeAuthStateChanged((_event, nextSession) => {
+      if (!cancelled) {
+        setSession(nextSession);
+      }
+    });
+    void (async () => {
+      try {
+        const currentSession = await getCurrentSession();
+        if (!cancelled) {
+          setSession(currentSession);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAuthError(error instanceof Error ? error.message : "Failed to initialize auth session.");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const cloudState = await loadCloudState();
+        if (!cancelled && cloudState) {
+          applyPersistedState(cloudState);
+          setAuthStatus("Loaded cloud data.");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAuthError(error instanceof Error ? error.message : "Failed to load cloud data.");
+        }
+      } finally {
+        if (!cancelled) {
+          setCloudHydrated(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     saveAppState(persistedState);
   }, [persistedState]);
@@ -244,9 +334,9 @@ export default function App(): JSX.Element {
       return;
     }
     flushAppState(persistedState);
-    setManualUploadPersistedMessage(`${pendingManualUploadMessage} Saved on this device.`);
+    setManualUploadPersistedMessage(`${pendingManualUploadMessage} ${isOwner ? "Saved to cloud." : "Saved on this device."}`);
     setPendingManualUploadMessage(null);
-  }, [pendingManualUploadMessage, persistedState]);
+  }, [isOwner, pendingManualUploadMessage, persistedState]);
 
   useEffect(() => {
     if (hydratedState != null) {
@@ -254,6 +344,55 @@ export default function App(): JSX.Element {
     }
     flushAppState(persistedState);
   }, [hydratedState, persistedState]);
+
+  useEffect(() => {
+    if (!cloudConfigured || !cloudHydrated || !isOwner || !ownerUid) {
+      return;
+    }
+    const saveTimeout = window.setTimeout(() => {
+      void saveCloudState(persistedState, ownerUid).catch((error) => {
+        setAuthError(error instanceof Error ? error.message : "Failed to save cloud state.");
+      });
+    }, 350);
+    return () => window.clearTimeout(saveTimeout);
+  }, [cloudConfigured, cloudHydrated, isOwner, ownerUid, persistedState]);
+
+  const handleSignIn = async (email: string, password: string): Promise<void> => {
+    setAuthError("");
+    setAuthStatus("");
+    try {
+      await signInWithEmailPassword(email, password);
+      setAuthStatus("Signed in.");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Sign in failed.");
+    }
+  };
+
+  const handleSignOut = async (): Promise<void> => {
+    setAuthError("");
+    setAuthStatus("");
+    try {
+      await signOutSession();
+      setAuthStatus("Signed out.");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Sign out failed.");
+    }
+  };
+
+  const handleImportLocal = async (): Promise<void> => {
+    if (!ownerUid) {
+      setAuthError("Missing owner UID configuration.");
+      return;
+    }
+    setAuthError("");
+    setAuthStatus("");
+    try {
+      const imported = await importLocalStateIfCloudEmpty(persistedState, ownerUid);
+      setAuthStatus(imported ? "Imported local data to cloud." : "Cloud already had data. Import skipped.");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Failed to import local data.");
+    }
+  };
 
   return (
     <main className="appShell">
@@ -289,11 +428,27 @@ export default function App(): JSX.Element {
           <div className="panelHeader">
             <h2>Utilities</h2>
           </div>
+          {isReadOnly ? <p className="readOnlyNotice">Read-only mode. Sign in as owner to upload or edit shared data.</p> : null}
           <div className="utilitiesGrid">
+            <AuthPanel
+              configured={cloudConfigured}
+              isOwner={isOwner}
+              userEmail={session?.user?.email ?? null}
+              authError={authError}
+              authStatus={authStatus}
+              showImportLocal={cloudConfigured}
+              onSignIn={handleSignIn}
+              onSignOut={handleSignOut}
+              onImportLocal={handleImportLocal}
+            />
             <div className="utilityItem">
               <PlanUpload
                 compact
+                disabled={isReadOnly}
                 onScheduleParsed={(uploadedSchedule) => {
+                  if (isReadOnly) {
+                    return;
+                  }
                   const validDates = new Set(Object.keys(uploadedSchedule.plannedMilesByDate));
                   setActiveSchedule(uploadedSchedule);
                   setWeeklyTargetOverrides({});
@@ -338,7 +493,11 @@ export default function App(): JSX.Element {
             <div className="utilityItem">
               <GarminUpload
                 compact
+                disabled={isReadOnly}
                 onActivitiesParsed={(garminData) => {
+                  if (isReadOnly) {
+                    return;
+                  }
                   setActualsByDate((current) => {
                     const next = { ...current };
                     Object.entries(garminData.runMilesByDate).forEach(([isoDate, miles]) => {
@@ -358,8 +517,12 @@ export default function App(): JSX.Element {
             <div className="utilityItem">
               <ActivityUpload
                 compact
+                disabled={isReadOnly}
                 persistedStatusMessage={manualUploadPersistedMessage}
                 onActivityParsed={({ selectedDateIso, doubleRun, parsed }: ActivityUploadPayload) => {
+                  if (isReadOnly) {
+                    return;
+                  }
                   setManualUploadPersistedMessage("");
                   setActualsByDate((current) => {
                     const currentMiles = clampPositive(current[selectedDateIso] ?? 0);
@@ -398,8 +561,14 @@ export default function App(): JSX.Element {
                   id="raceDate"
                   className="glassInput"
                   type="date"
+                  disabled={isReadOnly}
                   value={raceDateIso}
-                  onChange={(event) => setRaceDateIso(event.target.value)}
+                  onChange={(event) => {
+                    if (isReadOnly) {
+                      return;
+                    }
+                    setRaceDateIso(event.target.value);
+                  }}
                 />
               </div>
             </div>
@@ -411,8 +580,14 @@ export default function App(): JSX.Element {
                 <label className="paceOverlayToggle">
                   <input
                     type="checkbox"
+                    disabled={isReadOnly}
                     checked={showTargetPaceOverlay}
-                    onChange={(event) => setShowTargetPaceOverlay(event.target.checked)}
+                    onChange={(event) => {
+                      if (isReadOnly) {
+                        return;
+                      }
+                      setShowTargetPaceOverlay(event.target.checked);
+                    }}
                   />
                   Show target pace line on split charts
                 </label>
@@ -424,9 +599,18 @@ export default function App(): JSX.Element {
                   className="glassInput"
                   type="text"
                   inputMode="numeric"
+                  disabled={isReadOnly}
                   value={targetPaceInput}
-                  onChange={(event) => setTargetPaceInput(event.target.value)}
+                  onChange={(event) => {
+                    if (isReadOnly) {
+                      return;
+                    }
+                    setTargetPaceInput(event.target.value);
+                  }}
                   onBlur={() => {
+                    if (isReadOnly) {
+                      return;
+                    }
                     const parsed = parsePaceToSeconds(targetPaceInput);
                     if (parsed == null) {
                       setTargetPaceInput(formatPace(targetPaceSecondsPerMile));
@@ -577,7 +761,7 @@ export default function App(): JSX.Element {
           todayIso={todayIso}
           targetWeeklyTotal={targetWeeklyTotal}
           exceededByMiles={redistributed.exceededByMiles}
-          canEditActualForDate={(isoDate) => isoDate <= todayIso}
+          canEditActualForDate={(isoDate) => !isReadOnly && isoDate <= todayIso}
           onPreviousWeek={() => {
             setSelectedWeekStartIso((current) => toIsoDate(addDays(fromIsoDate(current), -7)));
           }}
@@ -585,12 +769,18 @@ export default function App(): JSX.Element {
             setSelectedWeekStartIso((current) => toIsoDate(addDays(fromIsoDate(current), 7)));
           }}
           onTargetChange={(newTarget) => {
+            if (isReadOnly) {
+              return;
+            }
             setWeeklyTargetOverrides((current) => ({
               ...current,
               [selectedWeekStartIso]: clampPositive(newTarget)
             }));
           }}
           onActualChange={(isoDate, miles) => {
+            if (isReadOnly) {
+              return;
+            }
             setActualsByDate((current) => {
               const next = { ...current };
               if (miles == null || !Number.isFinite(miles)) {
@@ -617,6 +807,7 @@ export default function App(): JSX.Element {
           weeklyProgress={weeklyProgress}
           runSplitsByDate={mergedRunSplitsByDate}
           actualsByDate={actualsByDate}
+          raceDateIso={raceDateIso}
         />
       ) : null}
     </main>

@@ -13,12 +13,14 @@ interface ActivityUploadProps {
   onActivityParsed: (payload: ActivityUploadPayload) => void;
   compact?: boolean;
   persistedStatusMessage?: string;
+  disabled?: boolean;
 }
 
 export function ActivityUpload({
   onActivityParsed,
   compact = false,
-  persistedStatusMessage
+  persistedStatusMessage,
+  disabled = false
 }: ActivityUploadProps): JSX.Element {
   const [selectedDateIso, setSelectedDateIso] = useState<IsoDateString>(toIsoDate(new Date()));
   const [doubleRun, setDoubleRun] = useState<boolean>(false);
@@ -52,6 +54,7 @@ export function ActivityUpload({
           id="activityDateInput"
           className="glassInput"
           type="date"
+          disabled={disabled}
           value={selectedDateIso}
           onChange={(event) => {
             setSelectedDateIso(event.target.value as IsoDateString);
@@ -60,6 +63,7 @@ export function ActivityUpload({
         <label className="activityUploadCheckbox">
           <input
             type="checkbox"
+            disabled={disabled}
             checked={doubleRun}
             onChange={(event) => {
               setDoubleRun(event.target.checked);
@@ -75,7 +79,11 @@ export function ActivityUpload({
           className="glassInput"
           type="file"
           accept=".csv,text/csv"
+          disabled={disabled}
           onChange={(event) => {
+            if (disabled) {
+              return;
+            }
             const file = event.target.files?.[0];
             if (!file) {
               setSelectedFile(null);
@@ -89,9 +97,9 @@ export function ActivityUpload({
         <button
           type="button"
           className="navButton bubbleInteractive"
-          disabled={!selectedFile}
+          disabled={disabled || !selectedFile}
           onClick={async () => {
-            if (!selectedFile) {
+            if (disabled || !selectedFile) {
               return;
             }
 
@@ -128,6 +136,7 @@ export function ActivityUpload({
       </div>
 
       <p className="uploadStatus">{status}</p>
+      {disabled ? <p className="uploadStatus">Sign in as owner to upload.</p> : null}
       {error ? <p className="uploadError">{error}</p> : null}
     </section>
   );

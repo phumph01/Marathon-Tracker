@@ -7,6 +7,7 @@ interface FitnessInsightsTabProps {
   weeklyProgress: WeeklyProgressPoint[];
   runSplitsByDate: Record<string, MileSplitPoint[]>;
   actualsByDate: Record<string, number>;
+  raceDateIso: string;
 }
 
 interface WeeklyFitnessPoint {
@@ -31,12 +32,13 @@ interface FitnessHoverState {
   lines: string[];
 }
 
-type RelationshipWindow = "all" | "1y" | "6m" | "3m";
+type RelationshipWindow = "all" | "1y" | "6m" | "3m" | "target";
 
 export function FitnessInsightsTab({
   weeklyProgress,
   runSplitsByDate,
-  actualsByDate
+  actualsByDate,
+  raceDateIso
 }: FitnessInsightsTabProps): JSX.Element {
   const vizWrapRef = useRef<HTMLDivElement>(null);
   const [hoverState, setHoverState] = useState<FitnessHoverState | null>(null);
@@ -158,9 +160,22 @@ export function FitnessInsightsTab({
               >
                 3M
               </button>
+              <button
+                type="button"
+                className={`chartModeButton ${relationshipWindow === "target" ? "active" : ""}`}
+                aria-pressed={relationshipWindow === "target"}
+                onClick={() => setRelationshipWindow("target")}
+              >
+                Target
+              </button>
             </div>
           </div>
-          <PaceHrScatterChart runDays={filteredRunDays} onPointHover={showHover} />
+          <PaceHrScatterChart
+            runDays={filteredRunDays}
+            raceDateIso={raceDateIso}
+            showTargetBubble={relationshipWindow === "target"}
+            onPointHover={showHover}
+          />
         </article>
         {hoverState ? (
           <div
@@ -384,12 +399,29 @@ function PaceHrTrendChart({
 
 function PaceHrScatterChart({
   runDays,
+  raceDateIso,
+  showTargetBubble,
   onPointHover
 }: {
   runDays: RunDayPoint[];
+  raceDateIso: string;
+  showTargetBubble: boolean;
   onPointHover: (event: MouseEvent<SVGElement>, title: string, lines: string[]) => void;
 }): JSX.Element {
-  if (runDays.length < 3) {
+  const hasTargetDate = /^\d{4}-\d{2}-\d{2}$/.test(raceDateIso);
+  const targetDateMs = hasTargetDate ? fromIsoDate(raceDateIso).getTime() : null;
+  const targetPoint =
+    showTargetBubble && targetDateMs != null
+      ? {
+          isoDate: raceDateIso,
+          miles: 26,
+          avgPaceSecondsPerMile: 390,
+          avgHrBpm: 140,
+          beatsPerMile: (390 / 60) * 140
+        }
+      : null;
+
+  if (runDays.length < 3 && !targetPoint) {
     return <p className="chartEmptyState">Need more completed runs with split data.</p>;
   }
   const width = 980;
@@ -398,23 +430,39 @@ function PaceHrScatterChart({
   const padY = 26;
   const innerW = width - padX * 2;
   const innerH = height - padY * 2;
-  const chronological = [...runDays].sort((a, b) => a.isoDate.localeCompare(b.isoDate));
-  const relationshipSeries = chronological.map((day) => ({
+  const chronologicalRuns = [...runDays].sort((a, b) => a.isoDate.localeCompare(b.isoDate));
+  const relationshipSeries = chronologicalRuns.map((day) => ({
     ...day,
     beatsPerMile: (day.avgPaceSecondsPerMile / 60) * day.avgHrBpm
   }));
   const relationshipValues = relationshipSeries.map((day) => day.beatsPerMile);
+  if (targetPoint) {
+    relationshipValues.push(targetPoint.beatsPerMile);
+  }
   const valueMin = Math.floor((Math.min(...relationshipValues) - 6) / 2) * 2;
   const valueMax = Math.ceil((Math.max(...relationshipValues) + 6) / 2) * 2;
-  const xStep = innerW / Math.max(1, relationshipSeries.length - 1);
-  const xTickStep = Math.max(1, Math.floor(relationshipSeries.length / 6));
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => valueMin + ratio * (valueMax - valueMin));
-  const rolling = movingAverage(relationshipValues, 5);
+  const rolling = movingAverage(relationshipSeries.map((day) => day.beatsPerMile), 5);
+  const runDateMs = relationshipSeries.map((point) => fromIsoDate(point.isoDate).getTime());
+  const today = new Date();
+  const todayMs = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const domainDateMs = targetPoint && targetDateMs != null ? [...runDateMs, targetDateMs] : runDateMs;
+  const domainMinMs = domainDateMs.length > 0 ? Math.min(...domainDateMs) : targetDateMs ?? todayMs;
+  const domainMaxMs =
+    targetPoint && targetDateMs != null
+      ? Math.max(...domainDateMs)
+      : Math.max(todayMs, ...(domainDateMs.length > 0 ? domainDateMs : [todayMs]));
+  const domainSpanMs = Math.max(24 * 60 * 60 * 1000, domainMaxMs - domainMinMs);
+  const xTickStep = Math.max(1, Math.floor(Math.max(1, relationshipSeries.length) / 6));
 
-  const getX = (index: number): number => padX + index * xStep;
+  const getXForDateMs = (dateMs: number): number => padX + ((dateMs - domainMinMs) / domainSpanMs) * innerW;
   const getY = (value: number): number => padY + innerH - ((value - valueMin) / (valueMax - valueMin)) * innerH;
-  const relationshipPath = relationshipSeries.map((point, index) => `${getX(index)},${getY(point.beatsPerMile)}`).join(" ");
-  const rollingPath = rolling.map((value, index) => `${getX(index)},${getY(value)}`).join(" ");
+  const relationshipPath = relationshipSeries
+    .map((point) => `${getXForDateMs(fromIsoDate(point.isoDate).getTime())},${getY(point.beatsPerMile)}`)
+    .join(" ");
+  const rollingPath = rolling
+    .map((value, index) => `${getXForDateMs(fromIsoDate(relationshipSeries[index].isoDate).getTime())},${getY(value)}`)
+    .join(" ");
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="fitnessChart fitnessChartWide">
@@ -438,26 +486,32 @@ function PaceHrScatterChart({
         if (index % xTickStep !== 0 && index !== relationshipSeries.length - 1) {
           return null;
         }
+        const x = getXForDateMs(fromIsoDate(day.isoDate).getTime());
         return (
-          <text key={`${day.isoDate}-xtick`} className="fitnessTickLabel" x={getX(index)} y={height - 24} textAnchor="middle">
+          <text key={`${day.isoDate}-xtick`} className="fitnessTickLabel" x={x} y={height - 24} textAnchor="middle">
             {formatShortDate(day.isoDate)}
           </text>
         );
       })}
+      {targetPoint && targetDateMs != null ? (
+        <text className="fitnessTickLabel fitnessTargetTick" x={getXForDateMs(targetDateMs)} y={height - 24} textAnchor="middle">
+          {formatShortDate(targetPoint.isoDate)}
+        </text>
+      ) : null}
 
-      <polyline className="fitnessRelationshipSeries" points={relationshipPath} />
-      <polyline className="fitnessRelationshipTrend" points={rollingPath} />
+      {relationshipSeries.length > 1 ? <polyline className="fitnessRelationshipSeries" points={relationshipPath} /> : null}
+      {relationshipSeries.length > 1 ? <polyline className="fitnessRelationshipTrend" points={rollingPath} /> : null}
       {relationshipSeries.map((day, index) => (
         <g key={day.isoDate}>
           <circle
             className="fitnessScatterPoint"
-            cx={getX(index)}
+            cx={getXForDateMs(fromIsoDate(day.isoDate).getTime())}
             cy={getY(day.beatsPerMile)}
             r={Math.max(3, Math.min(8, day.miles / 2))}
             style={{ opacity: 0.82 }}
             onMouseMove={(event) =>
               onPointHover(event, formatDayLabel(day.isoDate), [
-                `Run order: ${index + 1}/${chronological.length}`,
+                `Run order: ${index + 1}/${chronologicalRuns.length}`,
                 `Pace: ${formatPace(day.avgPaceSecondsPerMile)}/mi`,
                 `HR: ${Math.round(day.avgHrBpm)} bpm`,
                 `Miles: ${formatMiles(day.miles)}`,
@@ -465,16 +519,41 @@ function PaceHrScatterChart({
               ])
             }
           />
-          {index === chronological.length - 1 ? (
+          {index === chronologicalRuns.length - 1 ? (
             <circle
               className="fitnessLatestPointRing"
-              cx={getX(index)}
+              cx={getXForDateMs(fromIsoDate(day.isoDate).getTime())}
               cy={getY(day.beatsPerMile)}
               r={Math.max(5, Math.min(10, day.miles / 2 + 2))}
             />
           ) : null}
         </g>
       ))}
+      {targetPoint && targetDateMs != null ? (
+        <g>
+          <circle
+            className="fitnessTargetPoint"
+            cx={getXForDateMs(targetDateMs)}
+            cy={getY(targetPoint.beatsPerMile)}
+            r={Math.max(5, Math.min(10, targetPoint.miles / 2))}
+            onMouseMove={(event) =>
+              onPointHover(event, "Target Marathon Effort", [
+                `Date: ${formatDayLabel(targetPoint.isoDate)}`,
+                "Pace: 6:30/mi",
+                "HR: 140 bpm",
+                "Miles: 26",
+                `Relationship: ${Math.round(targetPoint.beatsPerMile)} beats/mile`
+              ])
+            }
+          />
+          <circle
+            className="fitnessTargetPointRing"
+            cx={getXForDateMs(targetDateMs)}
+            cy={getY(targetPoint.beatsPerMile)}
+            r={Math.max(7, Math.min(12, targetPoint.miles / 2 + 2))}
+          />
+        </g>
+      ) : null}
       <text className="fitnessAxisLabel" x={width / 2} y={height - 6} textAnchor="middle">
         Date
       </text>
@@ -617,11 +696,15 @@ function formatShortDate(isoDate: string): string {
 }
 
 function filterRunDaysByWindow(runDays: RunDayPoint[], window: RelationshipWindow): RunDayPoint[] {
-  if (window === "all" || runDays.length === 0) {
+  if (runDays.length === 0) {
     return runDays;
   }
-  const latest = fromIsoDate(runDays[runDays.length - 1].isoDate);
-  const cutoff = new Date(latest);
+  const today = new Date();
+  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (window === "all" || window === "target") {
+    return runDays.filter((day) => fromIsoDate(day.isoDate).getTime() <= todayDate.getTime());
+  }
+  const cutoff = new Date(todayDate);
   if (window === "1y") {
     cutoff.setFullYear(cutoff.getFullYear() - 1);
   } else if (window === "6m") {
@@ -629,5 +712,8 @@ function filterRunDaysByWindow(runDays: RunDayPoint[], window: RelationshipWindo
   } else {
     cutoff.setMonth(cutoff.getMonth() - 3);
   }
-  return runDays.filter((day) => fromIsoDate(day.isoDate).getTime() >= cutoff.getTime());
+  return runDays.filter((day) => {
+    const dayMs = fromIsoDate(day.isoDate).getTime();
+    return dayMs >= cutoff.getTime() && dayMs <= todayDate.getTime();
+  });
 }
