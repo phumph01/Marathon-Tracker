@@ -95,15 +95,40 @@ export function WeeklyProgressChart({
       return;
     }
     const rect = wrap.getBoundingClientRect();
+    const tooltipWidth = 230;
+    const desiredX = event.clientX - rect.left + 12;
+    const clampedX = Math.min(Math.max(8, desiredX), Math.max(8, rect.width - tooltipWidth - 8));
     setHoverState({
-      x: event.clientX - rect.left,
+      x: clampedX,
       y: event.clientY - rect.top,
       point
     });
   };
 
+  const showTooltipAtElement = (element: Element, point: WeeklyProgressPoint): void => {
+    const wrap = wrapRef.current;
+    if (!wrap) {
+      return;
+    }
+    const wrapRect = wrap.getBoundingClientRect();
+    const targetRect = element.getBoundingClientRect();
+    const tooltipWidth = 230;
+    const desiredX = targetRect.left - wrapRect.left + targetRect.width / 2 + 12;
+    const clampedX = Math.min(Math.max(8, desiredX), Math.max(8, wrapRect.width - tooltipWidth - 8));
+    setHoverState({
+      x: clampedX,
+      y: targetRect.top - wrapRect.top + targetRect.height / 2,
+      point
+    });
+  };
+
   return (
-    <div className="chartWrap" ref={wrapRef} onMouseLeave={() => setHoverState(null)}>
+    <div
+      className="chartWrap"
+      ref={wrapRef}
+      onMouseLeave={() => setHoverState(null)}
+      onClick={() => setHoverState(null)}
+    >
       <div className="chartYAxisOverlay" aria-hidden="true">
         {yTicks.map((tick, index) => {
           const y = getY(tick);
@@ -164,6 +189,10 @@ export function WeeklyProgressChart({
                     cy={getY(point.plannedTotal)}
                     r="9"
                     onMouseMove={(event) => showTooltipAtEvent(event, point)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      showTooltipAtElement(event.currentTarget, point);
+                    }}
                   />
                   {showActual ? (
                     <circle
@@ -172,6 +201,10 @@ export function WeeklyProgressChart({
                       cy={getY(point.actualTotal)}
                       r="9"
                       onMouseMove={(event) => showTooltipAtEvent(event, point)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        showTooltipAtElement(event.currentTarget, point);
+                      }}
                     />
                   ) : null}
                 </g>
@@ -202,6 +235,10 @@ export function WeeklyProgressChart({
                     height={Math.max(1, baseline - plannedY)}
                     rx="2"
                     onMouseMove={(event) => showTooltipAtEvent(event, point)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      showTooltipAtElement(event.currentTarget, point);
+                    }}
                   />
                   {showActual ? (
                     <rect
@@ -212,6 +249,10 @@ export function WeeklyProgressChart({
                       height={Math.max(1, baseline - actualY)}
                       rx="2"
                       onMouseMove={(event) => showTooltipAtEvent(event, point)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        showTooltipAtElement(event.currentTarget, point);
+                      }}
                     />
                   ) : null}
                 </g>
@@ -270,7 +311,7 @@ export function WeeklyProgressChart({
         <div
           className="chartHoverBox"
           style={{
-            left: `${hoverState.x + 12}px`,
+            left: `${hoverState.x}px`,
             top: `${Math.max(8, hoverState.y - 74)}px`
           }}
         >

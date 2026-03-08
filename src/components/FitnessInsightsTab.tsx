@@ -118,11 +118,15 @@ export function FitnessInsightsTab({
       <div className="fitnessVizGrid" ref={vizWrapRef} onMouseLeave={() => setHoverState(null)}>
         <article className="fitnessVizCard">
           <h3>Volume Trend + 4w Baseline</h3>
-          <VolumeTrendChart points={allWeeks} onPointHover={showHover} />
+          <div className="fitnessChartScroll">
+            <VolumeTrendChart points={allWeeks} onPointHover={showHover} />
+          </div>
         </article>
         <article className="fitnessVizCard">
           <h3>Pace and HR Trends</h3>
-          <PaceHrTrendChart points={allWeeks} onPointHover={showHover} />
+          <div className="fitnessChartScroll">
+            <PaceHrTrendChart points={allWeeks} onPointHover={showHover} />
+          </div>
         </article>
         <article className="fitnessVizCard fitnessVizCardWide">
           <div className="fitnessVizHeader">
@@ -170,12 +174,14 @@ export function FitnessInsightsTab({
               </button>
             </div>
           </div>
-          <PaceHrScatterChart
-            runDays={filteredRunDays}
-            raceDateIso={raceDateIso}
-            showTargetBubble={relationshipWindow === "target"}
-            onPointHover={showHover}
-          />
+          <div className="fitnessChartScroll">
+            <PaceHrScatterChart
+              runDays={filteredRunDays}
+              raceDateIso={raceDateIso}
+              showTargetBubble={relationshipWindow === "target"}
+              onPointHover={showHover}
+            />
+          </div>
         </article>
         {hoverState ? (
           <div

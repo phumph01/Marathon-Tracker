@@ -147,6 +147,8 @@ export default function App(): JSX.Element {
   const [manualUploadPersistedMessage, setManualUploadPersistedMessage] = useState<string>("");
   const [activeMainTab, setActiveMainTab] = useState<MainTab>("weekly");
   const [isUtilitiesOpen, setIsUtilitiesOpen] = useState(false);
+  const [weeklyPreviewTargetOverrides, setWeeklyPreviewTargetOverrides] = useState<Record<string, number>>({});
+  const [weeklyPreviewActualOverrides, setWeeklyPreviewActualOverrides] = useState<Record<string, number | null>>({});
   const [session, setSession] = useState<Session | null>(null);
   const [authError, setAuthError] = useState<string>("");
   const [authStatus, setAuthStatus] = useState<string>("");
@@ -158,10 +160,29 @@ export default function App(): JSX.Element {
 
   const weekDates = useMemo(() => getWeekDates(selectedWeekStartIso), [selectedWeekStartIso]);
   const originalPlannedWeek = useMemo(() => getOriginalWeekMiles(weekDates, activeSchedule), [activeSchedule, weekDates]);
-  const targetWeeklyTotal =
+  const persistedWeeklyTargetTotal =
     weeklyTargetOverrides[selectedWeekStartIso] ?? getDefaultTargetForWeek(weekDates, activeSchedule);
+  const targetWeeklyTotal = weeklyPreviewTargetOverrides[selectedWeekStartIso] ?? persistedWeeklyTargetTotal;
+  const resolvedWeeklyActualByDate = useMemo(() => {
+    const next: Record<string, number> = {};
+    weekDates.forEach((isoDate) => {
+      const override = weeklyPreviewActualOverrides[isoDate];
+      if (override === null) {
+        return;
+      }
+      if (typeof override === "number" && Number.isFinite(override)) {
+        next[isoDate] = override;
+        return;
+      }
+      const persisted = actualsByDate[isoDate];
+      if (Number.isFinite(persisted)) {
+        next[isoDate] = persisted;
+      }
+    });
+    return next;
+  }, [actualsByDate, weekDates, weeklyPreviewActualOverrides]);
   const completedActuals = weekDates.map((isoDate) => {
-    const value = actualsByDate[isoDate];
+    const value = resolvedWeeklyActualByDate[isoDate];
     return Number.isFinite(value) ? value : null;
   });
 
@@ -759,7 +780,7 @@ export default function App(): JSX.Element {
           dayDates={weekDates}
           originalPlannedWeek={originalPlannedWeek}
           adjustedWeek={redistributed.adjustedWeek}
-          actualsByDate={actualsByDate}
+          actualsByDate={resolvedWeeklyActualByDate}
           descriptionByDate={displayDescriptionByDate}
           runSplitsByDate={mergedRunSplitsByDate}
           showTargetPaceOverlay={showTargetPaceOverlay}
@@ -767,30 +788,43 @@ export default function App(): JSX.Element {
           todayIso={todayIso}
           targetWeeklyTotal={targetWeeklyTotal}
           exceededByMiles={redistributed.exceededByMiles}
-          canEditActualForDate={(isoDate) => !isReadOnly && isoDate <= todayIso}
+          canEditActualForDate={() => true}
           onPreviousWeek={() => {
             setSelectedWeekStartIso((current) => toIsoDate(addDays(fromIsoDate(current), -7)));
           }}
           onNextWeek={() => {
             setSelectedWeekStartIso((current) => toIsoDate(addDays(fromIsoDate(current), 7)));
           }}
+          canEditWeeklyTarget
+          isWhatIfMode
+          onResetWhatIf={() => {
+            setWeeklyPreviewTargetOverrides((current) => {
+              if (!(selectedWeekStartIso in current)) {
+                return current;
+              }
+              const next = { ...current };
+              delete next[selectedWeekStartIso];
+              return next;
+            });
+            setWeeklyPreviewActualOverrides((current) => {
+              const next = { ...current };
+              weekDates.forEach((isoDate) => {
+                delete next[isoDate];
+              });
+              return next;
+            });
+          }}
           onTargetChange={(newTarget) => {
-            if (isReadOnly) {
-              return;
-            }
-            setWeeklyTargetOverrides((current) => ({
+            setWeeklyPreviewTargetOverrides((current) => ({
               ...current,
               [selectedWeekStartIso]: clampPositive(newTarget)
             }));
           }}
           onActualChange={(isoDate, miles) => {
-            if (isReadOnly) {
-              return;
-            }
-            setActualsByDate((current) => {
+            setWeeklyPreviewActualOverrides((current) => {
               const next = { ...current };
               if (miles == null || !Number.isFinite(miles)) {
-                delete next[isoDate];
+                next[isoDate] = null;
               } else {
                 next[isoDate] = clampPositive(miles);
               }

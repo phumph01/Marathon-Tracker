@@ -46,10 +46,30 @@ export function ActualDataSection({
       return;
     }
     const rect = wrap.getBoundingClientRect();
+    const tooltipWidth = 230;
+    const desiredX = event.clientX - rect.left + 12;
+    const clampedX = Math.min(Math.max(8, desiredX), Math.max(8, rect.width - tooltipWidth - 8));
     setHoverState({
       ...payload,
-      x: event.clientX - rect.left,
+      x: clampedX,
       y: event.clientY - rect.top
+    });
+  };
+
+  const showHoverAtElement = (element: HTMLElement, payload: Omit<HoverState, "x" | "y">): void => {
+    const wrap = wrapRef.current;
+    if (!wrap) {
+      return;
+    }
+    const wrapRect = wrap.getBoundingClientRect();
+    const targetRect = element.getBoundingClientRect();
+    const tooltipWidth = 230;
+    const desiredX = targetRect.left - wrapRect.left + targetRect.width / 2 + 12;
+    const clampedX = Math.min(Math.max(8, desiredX), Math.max(8, wrapRect.width - tooltipWidth - 8));
+    setHoverState({
+      ...payload,
+      x: clampedX,
+      y: targetRect.top - wrapRect.top + targetRect.height / 2
     });
   };
 
@@ -58,7 +78,12 @@ export function ActualDataSection({
       <div className="panelHeader">
         <h2>Data</h2>
       </div>
-      <div className="actualDataTableWrap" ref={wrapRef} onMouseLeave={() => setHoverState(null)}>
+      <div
+        className="actualDataTableWrap"
+        ref={wrapRef}
+        onMouseLeave={() => setHoverState(null)}
+        onClick={() => setHoverState(null)}
+      >
         <table className="actualDataTable">
           <thead>
             <tr>
@@ -99,6 +124,15 @@ export function ActualDataSection({
                             runSplits: runSplitsByDate[weekDates[index]] ?? []
                           })
                         }
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          showHoverAtElement(event.currentTarget, {
+                            title: `${MONDAY_FIRST_DAY_LABELS[index]} ${dayDateLabel}`,
+                            metricLabel: "Actual",
+                            metricValue: actualLabel,
+                            runSplits: runSplitsByDate[weekDates[index]] ?? []
+                          });
+                        }}
                       >
                         {actualLabel}
                       </td>
@@ -114,6 +148,15 @@ export function ActualDataSection({
                         runSplits: []
                       })
                     }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      showHoverAtElement(event.currentTarget, {
+                        title: "Week Total",
+                        metricLabel: "Actual",
+                        metricValue: weeklyTotalLabel,
+                        runSplits: []
+                      });
+                    }}
                   >
                     {weeklyTotalLabel}
                   </td>
@@ -127,6 +170,15 @@ export function ActualDataSection({
                         runSplits: []
                       })
                     }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      showHoverAtElement(event.currentTarget, {
+                        title: "Week Average Pace",
+                        metricLabel: "Pace",
+                        metricValue: avgPaceLabel,
+                        runSplits: []
+                      });
+                    }}
                   >
                     {avgPaceLabel}
                   </td>
@@ -157,7 +209,7 @@ export function ActualDataSection({
           <div
             className="chartHoverBox"
             style={{
-              left: `${hoverState.x + 12}px`,
+              left: `${hoverState.x}px`,
               top: `${Math.max(8, hoverState.y - 78)}px`
             }}
           >

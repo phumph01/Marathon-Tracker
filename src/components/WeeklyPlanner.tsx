@@ -18,6 +18,9 @@ interface WeeklyPlannerProps {
   canEditActualForDate: (isoDate: string) => boolean;
   onPreviousWeek: () => void;
   onNextWeek: () => void;
+  canEditWeeklyTarget: boolean;
+  isWhatIfMode?: boolean;
+  onResetWhatIf?: () => void;
   onTargetChange: (newTarget: number) => void;
   onActualChange: (isoDate: string, miles: number | null) => void;
 }
@@ -38,6 +41,9 @@ export function WeeklyPlanner({
   canEditActualForDate,
   onPreviousWeek,
   onNextWeek,
+  canEditWeeklyTarget,
+  isWhatIfMode = false,
+  onResetWhatIf,
   onTargetChange,
   onActualChange
 }: WeeklyPlannerProps): JSX.Element {
@@ -66,8 +72,22 @@ export function WeeklyPlanner({
             min={0}
             step={0.5}
             value={targetWeeklyTotal}
-            onChange={(event) => onTargetChange(Number(event.target.value))}
+            disabled={!canEditWeeklyTarget}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              if (!Number.isFinite(value)) {
+                return;
+              }
+              onTargetChange(value);
+            }}
           />
+          {!canEditWeeklyTarget ? <p className="targetInputHelp">Sign in as owner to edit weekly target.</p> : null}
+          {isWhatIfMode ? <p className="targetInputHelp">Plan mode: weekly edits here are not saved.</p> : null}
+          {isWhatIfMode ? (
+            <button type="button" className="navButton bubbleInteractive weeklyResetButton" onClick={() => onResetWhatIf?.()}>
+              Reset plan mode
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -96,7 +116,7 @@ export function WeeklyPlanner({
                 Adjusted: <span className="metricValue">{formatMiles(adjustedWeek[index])} mi</span>
               </p>
               <label className="actualLabel" htmlFor={`actual-${isoDate}`}>
-                Actual (past/current)
+                Input miles (plan mode)
               </label>
               <input
                 id={`actual-${isoDate}`}
