@@ -5,6 +5,8 @@ import { sanitizePersistedAppState, type PersistedAppState } from "./storage";
 const APP_STATE_TABLE = "app_state";
 const APP_STATE_ROW_ID = "primary";
 
+export type ImportLocalResult = "imported" | "merged" | "unchanged";
+
 interface AppStateRow {
   id: string;
   owner_uid: string;
@@ -103,11 +105,42 @@ export function isOwnerSession(session: Session | null): boolean {
   return session.user.id === ownerUid;
 }
 
-export async function importLocalStateIfCloudEmpty(localState: PersistedAppState, ownerUid: string): Promise<boolean> {
+export async function importLocalStateToCloud(localState: PersistedAppState, ownerUid: string): Promise<ImportLocalResult> {
   const existing = await loadCloudState();
-  if (existing) {
-    return false;
+  if (!existing) {
+    await saveCloudState(localState, ownerUid);
+    return "imported";
   }
-  await saveCloudState(localState, ownerUid);
-  return true;
+  const mergedState = mergeLocalUploadData(existing, localState);
+  if (JSON.stringify(mergedState) === JSON.stringify(existing)) {
+    return "unchanged";
+  }
+  await saveCloudState(mergedState, ownerUid);
+  return "merged";
+}
+
+function mergeLocalUploadData(cloudState: PersistedAppState, localState: PersistedAppState): PersistedAppState {
+  return {
+    ...cloudState,
+    actualsByDate: {
+      ...cloudState.actualsByDate,
+      ...localState.actualsByDate
+    },
+    completedRunDescriptionByDate: {
+      ...cloudState.completedRunDescriptionByDate,
+      ...localState.completedRunDescriptionByDate
+    },
+    uploadedRunSplitsByDate: {
+      ...cloudState.uploadedRunSplitsByDate,
+      ...localState.uploadedRunSplitsByDate
+    },
+    workoutByDate: {
+      ...cloudState.workoutByDate,
+      ...localState.workoutByDate
+    },
+    otherByDate: {
+      ...cloudState.otherByDate,
+      ...localState.otherByDate
+    }
+  };
 }

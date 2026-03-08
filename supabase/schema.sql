@@ -6,6 +6,7 @@ create table if not exists public.app_state (
 );
 
 alter table public.app_state enable row level security;
+alter table public.app_state force row level security;
 
 drop policy if exists "app_state_read_all" on public.app_state;
 create policy "app_state_read_all"
@@ -19,22 +20,38 @@ create policy "app_state_owner_insert"
 on public.app_state
 for insert
 to authenticated
-with check (auth.uid() = owner_uid);
+with check (
+  id = 'primary'
+  and owner_uid = '23aa1744-ae41-41c9-b62a-757ea2f48931'::uuid
+  and auth.uid() = owner_uid
+);
 
 drop policy if exists "app_state_owner_update" on public.app_state;
 create policy "app_state_owner_update"
 on public.app_state
 for update
 to authenticated
-using (auth.uid() = owner_uid)
-with check (auth.uid() = owner_uid);
+using (
+  id = 'primary'
+  and owner_uid = '23aa1744-ae41-41c9-b62a-757ea2f48931'::uuid
+  and auth.uid() = owner_uid
+)
+with check (
+  id = 'primary'
+  and owner_uid = '23aa1744-ae41-41c9-b62a-757ea2f48931'::uuid
+  and auth.uid() = owner_uid
+);
 
 drop policy if exists "app_state_owner_delete" on public.app_state;
 create policy "app_state_owner_delete"
 on public.app_state
 for delete
 to authenticated
-using (auth.uid() = owner_uid);
+using (
+  id = 'primary'
+  and owner_uid = '23aa1744-ae41-41c9-b62a-757ea2f48931'::uuid
+  and auth.uid() = owner_uid
+);
 
 -- No default row is inserted here.
--- The first owner save should insert id='primary' with owner_uid=auth.uid().
+-- The first owner save should insert id='primary' with the fixed owner UID.

@@ -16,7 +16,7 @@ import { redistributeWeekMiles } from "./lib/redistribute";
 import { flushAppState, loadAppState, saveAppState, type PersistedAppState } from "./lib/storage";
 import {
   getCurrentSession,
-  importLocalStateIfCloudEmpty,
+  importLocalStateToCloud,
   isOwnerSession,
   loadCloudState,
   saveCloudState,
@@ -387,8 +387,14 @@ export default function App(): JSX.Element {
     setAuthError("");
     setAuthStatus("");
     try {
-      const imported = await importLocalStateIfCloudEmpty(persistedState, ownerUid);
-      setAuthStatus(imported ? "Imported local data to cloud." : "Cloud already had data. Import skipped.");
+      const result = await importLocalStateToCloud(persistedState, ownerUid);
+      if (result === "imported") {
+        setAuthStatus("Imported local data to cloud.");
+      } else if (result === "merged") {
+        setAuthStatus("Merged local upload data into cloud.");
+      } else {
+        setAuthStatus("No new local upload data to sync.");
+      }
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "Failed to import local data.");
     }
