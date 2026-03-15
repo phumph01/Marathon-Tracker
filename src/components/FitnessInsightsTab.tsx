@@ -120,13 +120,17 @@ export function FitnessInsightsTab({
         <article className="fitnessVizCard">
           <h3>Volume Trend + 4w Baseline</h3>
           <div className="fitnessChartScroll">
-            <VolumeTrendChart points={recentSixMonthWeeks} onPointHover={showHover} />
+            <div className="fitnessChartFrame">
+              <VolumeTrendChart points={recentSixMonthWeeks} onPointHover={showHover} />
+            </div>
           </div>
         </article>
         <article className="fitnessVizCard">
           <h3>Pace and HR Trends</h3>
           <div className="fitnessChartScroll">
-            <PaceHrTrendChart points={allWeeks} onPointHover={showHover} />
+            <div className="fitnessChartFrame">
+              <PaceHrTrendChart points={allWeeks} onPointHover={showHover} />
+            </div>
           </div>
         </article>
         <article className="fitnessVizCard fitnessVizCardWide">
@@ -176,12 +180,14 @@ export function FitnessInsightsTab({
             </div>
           </div>
           <div className="fitnessChartScroll">
-            <PaceHrScatterChart
-              runDays={filteredRunDays}
-              raceDateIso={raceDateIso}
-              showTargetBubble={relationshipWindow === "target"}
-              onPointHover={showHover}
-            />
+            <div className="fitnessChartFrame">
+              <PaceHrScatterChart
+                runDays={filteredRunDays}
+                raceDateIso={raceDateIso}
+                showTargetBubble={relationshipWindow === "target"}
+                onPointHover={showHover}
+              />
+            </div>
           </div>
         </article>
         {hoverState ? (

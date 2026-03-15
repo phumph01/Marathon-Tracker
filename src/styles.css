@@ -610,12 +610,20 @@ body {
 }
 
 .fitnessChartScroll {
-  overflow-x: auto;
+  overflow-x: scroll;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   padding-bottom: 0.2rem;
-  touch-action: pan-x;
+  touch-action: auto;
   overscroll-behavior-x: contain;
+  width: 100%;
+  max-width: 100%;
+}
+
+.fitnessChartFrame {
+  display: inline-block;
+  width: max-content;
+  min-width: 100%;
 }
 
 .fitnessVizHeader {

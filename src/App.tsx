@@ -287,7 +287,7 @@ export default function App(): JSX.Element {
     setOtherByDate(state.otherByDate);
     setChartMode(state.chartMode);
     setShowActual(state.showActual);
-    setTimeframe(state.timeframe);
+    setTimeframe("12w");
     setChartGranularity(state.chartGranularity);
     setShowTargetPaceOverlay(state.showTargetPaceOverlay);
     setTargetPaceSecondsPerMile(state.targetPaceSecondsPerMile);
