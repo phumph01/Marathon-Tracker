@@ -46,14 +46,25 @@ export function MonthlyCalendar({
     const weekCells = cells.slice(weekIndex * 7, weekIndex * 7 + 7);
     const weekStartIso = toIsoDate(weekCells[0]);
     const weekEndIso = toIsoDate(weekCells[6]);
-    const total = weekCells.reduce((sum, cellDate) => {
+    const plannedTotal = weekCells.reduce((sum, cellDate) => {
       const isoDate = toIsoDate(cellDate);
       return sum + (plannedMilesByDate[isoDate] ?? 0);
     }, 0);
+    const completedTotal = weekCells.reduce((sum, cellDate) => {
+      const isoDate = toIsoDate(cellDate);
+      const actualMiles = actualsByDate[isoDate];
+      if (!isIsoOnOrBefore(isoDate, todayIso)) {
+        return sum;
+      }
+      return sum + (typeof actualMiles === "number" && Number.isFinite(actualMiles) ? actualMiles : 0);
+    }, 0);
+    const isCurrentOrPastWeek = isIsoOnOrBefore(weekStartIso, todayIso);
     return {
       weekStartIso,
       weekEndIso,
-      total
+      plannedTotal,
+      completedTotal,
+      isCurrentOrPastWeek
     };
   });
   const activeRunSplits = useMemo(
@@ -172,7 +183,9 @@ export function MonthlyCalendar({
                 className={`weekTotalBox bubbleInteractive ${selectedWeekStart === week.weekStartIso ? "active" : ""} ${isIsoOnOrBefore(week.weekEndIso, todayIso) ? "completedWeekTotalBox" : ""}`}
                 onClick={() => onSelectWeekStart(week.weekStartIso)}
               >
-                {formatMiles(week.total)}
+                {week.isCurrentOrPastWeek
+                  ? `${formatMiles(week.completedTotal)}/${formatMiles(week.plannedTotal)}`
+                  : formatMiles(week.plannedTotal)}
               </button>
             ))}
           </div>
@@ -216,17 +229,34 @@ function formatMiles(value: number): string {
 
 function getCellMilesFontSize(miles: number, label: string): string {
   const safeMiles = Math.max(0, miles);
-  const minSizeRem = 1.7;
-  const maxSizeRem = 3.1;
+  const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 1280;
+  const isNarrow = viewportWidth <= 760;
+  const minSizeRem = isNarrow ? 0.95 : 1.15;
+  const maxSizeRem = isNarrow ? 2.25 : 3.1;
   const normalized = Math.min(1, safeMiles / 20);
   const amplified = Math.pow(normalized, 0.75);
   let size = minSizeRem + amplified * (maxSizeRem - minSizeRem);
-  if (label.length >= 4) {
-    size -= 0.42;
+
+  if (label.length >= 5) {
+    size -= isNarrow ? 0.48 : 0.42;
+  } else if (label.length >= 4) {
+    size -= isNarrow ? 0.34 : 0.26;
   } else if (label.length >= 3) {
-    size -= 0.22;
+    size -= isNarrow ? 0.2 : 0.12;
   }
-  size = Math.max(1.45, size);
+
+  // Estimate available cell width and cap text size so labels fit on mobile.
+  const appHorizontalPadding = viewportWidth <= 560 ? 18 : viewportWidth <= 760 ? 24 : 40;
+  const estimatedGridWidth = Math.max(260, viewportWidth - appHorizontalPadding * 2);
+  const estimatedCellWidth = estimatedGridWidth / 7;
+  const estimatedGlyphWidthFactor = 0.62;
+  const maxBySpacePx = (estimatedCellWidth * 0.86) / Math.max(1, label.length * estimatedGlyphWidthFactor);
+  const maxBySpaceRem = maxBySpacePx / 16;
+  if (Number.isFinite(maxBySpaceRem) && maxBySpaceRem > 0) {
+    size = Math.min(size, maxBySpaceRem);
+  }
+
+  size = Math.max(minSizeRem, size);
   return `${size.toFixed(2)}rem`;
 }
 

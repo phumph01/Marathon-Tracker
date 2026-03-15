@@ -47,6 +47,7 @@ export function FitnessInsightsTab({
   const filteredRunDays = filterRunDaysByWindow(runDays, relationshipWindow);
   const weeklyFitness = buildWeeklyFitnessPoints(weeklyProgress, runDays, actualsByDate);
   const allWeeks = weeklyFitness.filter((week) => week.hasObservedData);
+  const recentSixMonthWeeks = filterWeeksToRecentMonths(allWeeks, 6);
 
   const currentWeek = allWeeks[allWeeks.length - 1] ?? null;
   const previousWeek = allWeeks.length > 1 ? allWeeks[allWeeks.length - 2] : null;
@@ -119,7 +120,7 @@ export function FitnessInsightsTab({
         <article className="fitnessVizCard">
           <h3>Volume Trend + 4w Baseline</h3>
           <div className="fitnessChartScroll">
-            <VolumeTrendChart points={allWeeks} onPointHover={showHover} />
+            <VolumeTrendChart points={recentSixMonthWeeks} onPointHover={showHover} />
           </div>
         </article>
         <article className="fitnessVizCard">
@@ -230,7 +231,7 @@ function VolumeTrendChart({
   const baselinePath = rolling.map((value, index) => `${getX(index)},${getY(value)}`).join(" ");
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="fitnessChart">
+    <svg viewBox={`0 0 ${width} ${height}`} className="fitnessChart" style={{ width: `${width}px`, minWidth: `${width}px` }}>
       {yTickRatios.map((ratio) => {
         const y = getY(maxVolume * ratio);
         const value = maxVolume * ratio;
@@ -318,7 +319,7 @@ function PaceHrTrendChart({
   const hrPath = valid.map((point, index) => `${getX(index)},${getHrY(point.avgHrBpm ?? hrMin)}`).join(" ");
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="fitnessChart">
+    <svg viewBox={`0 0 ${width} ${height}`} className="fitnessChart" style={{ width: `${width}px`, minWidth: `${width}px` }}>
       {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
         const y = padY + innerH * ratio;
         return <line key={ratio} className="fitnessGridLine" x1={padX} y1={y} x2={width - padX} y2={y} />;
@@ -471,7 +472,11 @@ function PaceHrScatterChart({
     .join(" ");
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="fitnessChart fitnessChartWide">
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      className="fitnessChart fitnessChartWide"
+      style={{ width: `max(100%, ${width}px)`, minWidth: `${width}px` }}
+    >
       {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
         const y = padY + innerH * ratio;
         return (
@@ -721,5 +726,20 @@ function filterRunDaysByWindow(runDays: RunDayPoint[], window: RelationshipWindo
   return runDays.filter((day) => {
     const dayMs = fromIsoDate(day.isoDate).getTime();
     return dayMs >= cutoff.getTime() && dayMs <= todayDate.getTime();
+  });
+}
+
+function filterWeeksToRecentMonths(points: WeeklyFitnessPoint[], months: number): WeeklyFitnessPoint[] {
+  if (points.length === 0) {
+    return points;
+  }
+  const today = new Date();
+  const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const cutoff = new Date(endDate);
+  cutoff.setMonth(cutoff.getMonth() - Math.max(0, months));
+  return points.filter((point) => {
+    const weekDate = fromIsoDate(point.weekStartIso);
+    const weekMs = weekDate.getTime();
+    return weekMs >= cutoff.getTime() && weekMs <= endDate.getTime();
   });
 }

@@ -146,7 +146,7 @@ export function WeeklyProgressChart({
       <svg
         viewBox={`0 0 ${svgWidth} ${SVG_HEIGHT}`}
         className="progressChart"
-        style={{ minWidth: `${svgWidth}px` }}
+        style={{ width: `${svgWidth}px`, minWidth: `${svgWidth}px` }}
         role="img"
         aria-label="Weekly mileage progression chart"
       >

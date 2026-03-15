@@ -11,7 +11,7 @@ import { WeeklyProgressChart, type ChartMode } from "./components/WeeklyProgress
 import { WeeklyPlanner } from "./components/WeeklyPlanner";
 import { defaultSchedule } from "./data/defaultSchedule";
 import { runSplitsByDate as defaultRunSplitsByDate } from "./data/runSplitsData";
-import { addDays, fromIsoDate, getWeekDates, getWeekStartIso, normalizeWeekStartIso, toIsoDate } from "./lib/dateUtils";
+import { addDays, fromIsoDate, getWeekDates, getWeekStartIso, toIsoDate } from "./lib/dateUtils";
 import { redistributeWeekMiles } from "./lib/redistribute";
 import { flushAppState, loadAppState, saveAppState, type PersistedAppState } from "./lib/storage";
 import {
@@ -112,13 +112,11 @@ function mergeRunSplitsForDoubleRun(existingSplits: MileSplitPoint[], uploadedSp
 export default function App(): JSX.Element {
   const today = new Date();
   const todayIso = toIsoDate(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+  const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const currentWeekStartIso = getWeekStartIso(today);
   const hydratedState = useMemo(() => loadAppState(), []);
-  const initialMonthDate =
-    hydratedState != null ? fromIsoDate(hydratedState.monthDateIso) : new Date(today.getFullYear(), today.getMonth(), 1);
-  const initialSelectedWeekStartIso =
-    hydratedState?.selectedWeekStartIso != null
-      ? normalizeWeekStartIso(hydratedState.selectedWeekStartIso)
-      : getWeekStartIso(today);
+  const initialMonthDate = currentMonthStart;
+  const initialSelectedWeekStartIso = currentWeekStartIso;
   const initialSchedule = hydratedState?.activeSchedule ?? defaultSchedule;
   const initialRaceDateIso = hydratedState?.raceDateIso ?? getDefaultRaceDate(initialSchedule);
 
@@ -127,7 +125,7 @@ export default function App(): JSX.Element {
   const [activeSchedule, setActiveSchedule] = useState<TrainingSchedule>(initialSchedule);
   const [chartMode, setChartMode] = useState<ChartMode>(hydratedState?.chartMode ?? "line");
   const [showActual, setShowActual] = useState(hydratedState?.showActual ?? true);
-  const [timeframe, setTimeframe] = useState<WeeklyTimeframe>(hydratedState?.timeframe ?? "all");
+  const [timeframe, setTimeframe] = useState<WeeklyTimeframe>(hydratedState?.timeframe ?? "12w");
   const [chartGranularity, setChartGranularity] = useState<ProgressGranularity>(hydratedState?.chartGranularity ?? "weekly");
   const [raceDateIso, setRaceDateIso] = useState<string>(initialRaceDateIso);
   const [weeklyTargetOverrides, setWeeklyTargetOverrides] = useState<Record<string, number>>(hydratedState?.weeklyTargetOverrides ?? {});
@@ -196,13 +194,6 @@ export default function App(): JSX.Element {
     [completedActuals, originalPlannedWeek, targetWeeklyTotal]
   );
 
-  const weeklyProgress = useMemo(() => buildWeeklyProgress(activeSchedule, actualsByDate), [activeSchedule, actualsByDate]);
-  const dailyProgress = useMemo(() => buildDailyProgress(activeSchedule, actualsByDate), [activeSchedule, actualsByDate]);
-  const chartSourceData = chartGranularity === "daily" ? dailyProgress : weeklyProgress;
-  const progressVisible = useMemo(
-    () => filterProgressByTimeframe(chartSourceData, timeframe, chartGranularity, todayIso),
-    [chartGranularity, chartSourceData, timeframe, todayIso]
-  );
   const displayDescriptionByDate = useMemo(
     () => ({
       ...activeSchedule.descriptionByDate,
@@ -217,9 +208,35 @@ export default function App(): JSX.Element {
     }),
     [uploadedRunSplitsByDate]
   );
+  const effectiveActualsByDate = useMemo(() => {
+    const next: Record<string, number> = { ...actualsByDate };
+    Object.entries(mergedRunSplitsByDate).forEach(([isoDate, splits]) => {
+      if (Number.isFinite(next[isoDate])) {
+        return;
+      }
+      const splitMiles = splits.length;
+      if (splitMiles > 0) {
+        next[isoDate] = splitMiles;
+      }
+    });
+    return next;
+  }, [actualsByDate, mergedRunSplitsByDate]);
+  const weeklyProgress = useMemo(
+    () => buildWeeklyProgress(activeSchedule, effectiveActualsByDate),
+    [activeSchedule, effectiveActualsByDate]
+  );
+  const dailyProgress = useMemo(
+    () => buildDailyProgress(activeSchedule, effectiveActualsByDate),
+    [activeSchedule, effectiveActualsByDate]
+  );
+  const chartSourceData = chartGranularity === "daily" ? dailyProgress : weeklyProgress;
+  const progressVisible = useMemo(
+    () => filterProgressByTimeframe(chartSourceData, timeframe, chartGranularity, todayIso),
+    [chartGranularity, chartSourceData, timeframe, todayIso]
+  );
   const weeklyActualDataRows = useMemo(
-    () => buildWeeklyActualDataRows(weeklyProgress, mergedRunSplitsByDate, actualsByDate, todayIso),
-    [weeklyProgress, mergedRunSplitsByDate, actualsByDate, todayIso]
+    () => buildWeeklyActualDataRows(weeklyProgress, mergedRunSplitsByDate, effectiveActualsByDate, todayIso),
+    [weeklyProgress, mergedRunSplitsByDate, effectiveActualsByDate, todayIso]
   );
   const persistedState = useMemo(
     () => ({
@@ -276,8 +293,9 @@ export default function App(): JSX.Element {
     setTargetPaceSecondsPerMile(state.targetPaceSecondsPerMile);
     setTargetPaceInput(formatPace(state.targetPaceSecondsPerMile));
     setUploadedRunSplitsByDate(state.uploadedRunSplitsByDate);
-    setMonthDate(fromIsoDate(state.monthDateIso));
-    setSelectedWeekStartIso(normalizeWeekStartIso(state.selectedWeekStartIso));
+    // Always start users at the current month/week on app open.
+    setMonthDate(currentMonthStart);
+    setSelectedWeekStartIso(currentWeekStartIso);
   };
 
   useEffect(() => {
@@ -758,7 +776,7 @@ export default function App(): JSX.Element {
         <MonthlyCalendar
           monthDate={monthDate}
           plannedMilesByDate={activeSchedule.plannedMilesByDate}
-          actualsByDate={actualsByDate}
+          actualsByDate={effectiveActualsByDate}
           descriptionByDate={displayDescriptionByDate}
           runSplitsByDate={mergedRunSplitsByDate}
           showTargetPaceOverlay={showTargetPaceOverlay}
@@ -846,7 +864,7 @@ export default function App(): JSX.Element {
         <FitnessInsightsTab
           weeklyProgress={weeklyProgress}
           runSplitsByDate={mergedRunSplitsByDate}
-          actualsByDate={actualsByDate}
+          actualsByDate={effectiveActualsByDate}
           raceDateIso={raceDateIso}
         />
       ) : null}
