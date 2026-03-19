@@ -596,6 +596,17 @@ body {
   gap: 0.7rem;
 }
 
+.fitnessInteractiveArea {
+  position: relative;
+  z-index: 1;
+}
+
+.fitnessOverviewGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
 .fitnessVizCard {
   border: 1px solid rgba(148, 184, 255, 0.2);
   border-radius: var(--radius-md);
@@ -609,12 +620,67 @@ body {
   color: #d7e7ff;
 }
 
+.fitnessOverviewCard {
+  border: 1px solid rgba(148, 184, 255, 0.24);
+  border-radius: var(--radius-md);
+  background: rgba(8, 18, 37, 0.58);
+  padding: 0.65rem;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  min-height: 210px;
+}
+
+.fitnessOverviewCard.active {
+  border-color: rgba(124, 179, 255, 0.72);
+  box-shadow: 0 0 0 1px rgba(124, 179, 255, 0.38), 0 10px 20px rgba(3, 8, 20, 0.4);
+}
+
+.fitnessOverviewHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin-bottom: 0.45rem;
+}
+
+.fitnessOverviewHeader h3 {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #d7e7ff;
+}
+
+.fitnessOverviewHeader span {
+  color: #9cb3df;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.fitnessFocusedPanel {
+  margin-top: 0.8rem;
+  border: 1px solid rgba(150, 183, 244, 0.26);
+  border-radius: var(--radius-md);
+  background: rgba(9, 18, 37, 0.58);
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.fitnessFocusedPanel .fitnessWindowToggle {
+  display: flex;
+  width: 100%;
+}
+
+.fitnessFocusedPanel .fitnessWindowToggle .chartModeButton {
+  flex: 1 1 auto;
+}
+
 .fitnessChartScroll {
   overflow-x: scroll;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   padding-bottom: 0.2rem;
-  touch-action: auto;
+  touch-action: pan-x;
   overscroll-behavior-x: contain;
   width: 100%;
   max-width: 100%;
@@ -624,6 +690,10 @@ body {
   display: inline-block;
   width: max-content;
   min-width: 100%;
+}
+
+.fitnessOverviewCard .fitnessChartFrame {
+  pointer-events: none;
 }
 
 .fitnessVizHeader {
@@ -730,6 +800,19 @@ body {
 .fitnessTickLabel {
   fill: #9fb4db;
   font-size: 9px;
+}
+
+.fitnessYAxisToggleTarget {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.fitnessYAxisToggleLabel {
+  cursor: pointer;
+}
+
+.fitnessYAxisHint {
+  fill: #a9c0ea;
 }
 
 .fitnessLatestPointRing {
@@ -1526,6 +1609,10 @@ body {
   .fitnessKpiGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .fitnessOverviewGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -1609,6 +1696,30 @@ body {
   .fitnessKpiGrid,
   .fitnessVizGrid {
     grid-template-columns: 1fr;
+  }
+
+  .fitnessOverviewGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .fitnessVizHeader {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .fitnessVizHeader .chartModeButton {
+    width: 100%;
+  }
+
+  .fitnessFocusedPanel {
+    padding: 0.62rem;
+    gap: 0.52rem;
+  }
+
+  .fitnessFocusedPanel .fitnessWindowToggle {
+    border-radius: 14px;
+    overflow: hidden;
   }
 
   .fitnessChart {

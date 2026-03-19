@@ -219,8 +219,20 @@ export default function App(): JSX.Element {
         next[isoDate] = splitMiles;
       }
     });
+    Object.entries(activeSchedule.plannedMilesByDate).forEach(([isoDate, plannedMiles]) => {
+      if (!Number.isFinite(plannedMiles) || plannedMiles <= 0) {
+        return;
+      }
+      if (isoDate > todayIso) {
+        return;
+      }
+      if (Number.isFinite(next[isoDate])) {
+        return;
+      }
+      next[isoDate] = 0;
+    });
     return next;
-  }, [actualsByDate, mergedRunSplitsByDate]);
+  }, [actualsByDate, mergedRunSplitsByDate, activeSchedule.plannedMilesByDate, todayIso]);
   const weeklyProgress = useMemo(
     () => buildWeeklyProgress(activeSchedule, effectiveActualsByDate),
     [activeSchedule, effectiveActualsByDate]

@@ -32,7 +32,10 @@ interface FitnessHoverState {
   lines: string[];
 }
 
+type WeeklyWindow = "all" | "12m" | "6m" | "3m";
 type RelationshipWindow = "all" | "1y" | "6m" | "3m" | "target";
+type FocusedChart = "volume" | "paceHrTrend" | "relationship" | null;
+type DetailLevel = "compact" | "full";
 
 export function FitnessInsightsTab({
   weeklyProgress,
@@ -42,12 +45,18 @@ export function FitnessInsightsTab({
 }: FitnessInsightsTabProps): JSX.Element {
   const vizWrapRef = useRef<HTMLDivElement>(null);
   const [hoverState, setHoverState] = useState<FitnessHoverState | null>(null);
+  const [focusedChart, setFocusedChart] = useState<FocusedChart>(null);
+  const [volumeWindow, setVolumeWindow] = useState<WeeklyWindow>("6m");
+  const [paceHrWindow, setPaceHrWindow] = useState<WeeklyWindow>("6m");
   const [relationshipWindow, setRelationshipWindow] = useState<RelationshipWindow>("all");
+  const [relationshipIncludeZeroBaseline, setRelationshipIncludeZeroBaseline] = useState(false);
   const runDays = buildRunDayPoints(runSplitsByDate, actualsByDate);
-  const filteredRunDays = filterRunDaysByWindow(runDays, relationshipWindow);
   const weeklyFitness = buildWeeklyFitnessPoints(weeklyProgress, runDays, actualsByDate);
   const allWeeks = weeklyFitness.filter((week) => week.hasObservedData);
-  const recentSixMonthWeeks = filterWeeksToRecentMonths(allWeeks, 6);
+  const overviewWeeks = filterWeeksByWindow(allWeeks, "6m");
+  const filteredVolumeWeeks = filterWeeksByWindow(allWeeks, volumeWindow);
+  const filteredPaceHrWeeks = filterWeeksByWindow(allWeeks, paceHrWindow);
+  const filteredRunDays = filterRunDaysByWindow(runDays, relationshipWindow);
 
   const currentWeek = allWeeks[allWeeks.length - 1] ?? null;
   const previousWeek = allWeeks.length > 1 ? allWeeks[allWeeks.length - 2] : null;
@@ -116,80 +125,194 @@ export function FitnessInsightsTab({
         </article>
       </div>
 
-      <div className="fitnessVizGrid" ref={vizWrapRef} onMouseLeave={() => setHoverState(null)}>
-        <article className="fitnessVizCard">
-          <h3>Volume Trend + 4w Baseline</h3>
-          <div className="fitnessChartScroll">
-            <div className="fitnessChartFrame">
-              <VolumeTrendChart points={recentSixMonthWeeks} onPointHover={showHover} />
-            </div>
-          </div>
-        </article>
-        <article className="fitnessVizCard">
-          <h3>Pace and HR Trends</h3>
-          <div className="fitnessChartScroll">
-            <div className="fitnessChartFrame">
-              <PaceHrTrendChart points={allWeeks} onPointHover={showHover} />
-            </div>
-          </div>
-        </article>
-        <article className="fitnessVizCard fitnessVizCardWide">
-          <div className="fitnessVizHeader">
-            <h3>Pace vs HR Relationship</h3>
-            <div className="fitnessWindowToggle" role="radiogroup" aria-label="Pace vs HR timeframe">
+      <div className="fitnessInteractiveArea" ref={vizWrapRef} onMouseLeave={() => setHoverState(null)}>
+        {focusedChart ? (
+          <article className="fitnessFocusedPanel">
+            <div className="fitnessVizHeader">
+              <h3>
+                {focusedChart === "volume"
+                  ? "Volume Trend + 4w Baseline"
+                  : focusedChart === "paceHrTrend"
+                    ? "Pace and HR Trends"
+                    : "Pace vs HR Relationship"}
+              </h3>
               <button
                 type="button"
-                className={`chartModeButton ${relationshipWindow === "all" ? "active" : ""}`}
-                aria-pressed={relationshipWindow === "all"}
-                onClick={() => setRelationshipWindow("all")}
+                className="chartModeButton bubbleInteractive"
+                onClick={() => {
+                  setFocusedChart(null);
+                  setHoverState(null);
+                }}
               >
-                All
-              </button>
-              <button
-                type="button"
-                className={`chartModeButton ${relationshipWindow === "1y" ? "active" : ""}`}
-                aria-pressed={relationshipWindow === "1y"}
-                onClick={() => setRelationshipWindow("1y")}
-              >
-                1y
-              </button>
-              <button
-                type="button"
-                className={`chartModeButton ${relationshipWindow === "6m" ? "active" : ""}`}
-                aria-pressed={relationshipWindow === "6m"}
-                onClick={() => setRelationshipWindow("6m")}
-              >
-                6M
-              </button>
-              <button
-                type="button"
-                className={`chartModeButton ${relationshipWindow === "3m" ? "active" : ""}`}
-                aria-pressed={relationshipWindow === "3m"}
-                onClick={() => setRelationshipWindow("3m")}
-              >
-                3M
-              </button>
-              <button
-                type="button"
-                className={`chartModeButton ${relationshipWindow === "target" ? "active" : ""}`}
-                aria-pressed={relationshipWindow === "target"}
-                onClick={() => setRelationshipWindow("target")}
-              >
-                Target
+                Back to overview
               </button>
             </div>
+
+            {focusedChart === "volume" ? (
+              <>
+                <div className="fitnessWindowToggle" role="radiogroup" aria-label="Volume timeframe">
+                  {(["3m", "6m", "12m", "all"] as WeeklyWindow[]).map((window) => (
+                    <button
+                      key={window}
+                      type="button"
+                      className={`chartModeButton ${volumeWindow === window ? "active" : ""}`}
+                      aria-pressed={volumeWindow === window}
+                      onClick={() => setVolumeWindow(window)}
+                    >
+                      {window === "all" ? "All" : window.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <div className="fitnessChartScroll">
+                  <div className="fitnessChartFrame">
+                    <VolumeTrendChart points={filteredVolumeWeeks} detailLevel="full" onPointHover={showHover} />
+                  </div>
+                </div>
+              </>
+            ) : null}
+
+            {focusedChart === "paceHrTrend" ? (
+              <>
+                <div className="fitnessWindowToggle" role="radiogroup" aria-label="Pace and HR timeframe">
+                  {(["3m", "6m", "12m", "all"] as WeeklyWindow[]).map((window) => (
+                    <button
+                      key={window}
+                      type="button"
+                      className={`chartModeButton ${paceHrWindow === window ? "active" : ""}`}
+                      aria-pressed={paceHrWindow === window}
+                      onClick={() => setPaceHrWindow(window)}
+                    >
+                      {window === "all" ? "All" : window.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <div className="fitnessChartScroll">
+                  <div className="fitnessChartFrame">
+                    <PaceHrTrendChart points={filteredPaceHrWeeks} detailLevel="full" onPointHover={showHover} />
+                  </div>
+                </div>
+              </>
+            ) : null}
+
+            {focusedChart === "relationship" ? (
+              <>
+                <div className="fitnessWindowToggle" role="radiogroup" aria-label="Pace vs HR timeframe">
+                  <button
+                    type="button"
+                    className={`chartModeButton ${relationshipWindow === "all" ? "active" : ""}`}
+                    aria-pressed={relationshipWindow === "all"}
+                    onClick={() => setRelationshipWindow("all")}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    className={`chartModeButton ${relationshipWindow === "1y" ? "active" : ""}`}
+                    aria-pressed={relationshipWindow === "1y"}
+                    onClick={() => setRelationshipWindow("1y")}
+                  >
+                    1Y
+                  </button>
+                  <button
+                    type="button"
+                    className={`chartModeButton ${relationshipWindow === "6m" ? "active" : ""}`}
+                    aria-pressed={relationshipWindow === "6m"}
+                    onClick={() => setRelationshipWindow("6m")}
+                  >
+                    6M
+                  </button>
+                  <button
+                    type="button"
+                    className={`chartModeButton ${relationshipWindow === "3m" ? "active" : ""}`}
+                    aria-pressed={relationshipWindow === "3m"}
+                    onClick={() => setRelationshipWindow("3m")}
+                  >
+                    3M
+                  </button>
+                  <button
+                    type="button"
+                    className={`chartModeButton ${relationshipWindow === "target" ? "active" : ""}`}
+                    aria-pressed={relationshipWindow === "target"}
+                    onClick={() => setRelationshipWindow("target")}
+                  >
+                    Target
+                  </button>
+                </div>
+                <div className="fitnessChartScroll">
+                  <div className="fitnessChartFrame">
+                    <PaceHrScatterChart
+                      runDays={filteredRunDays}
+                      raceDateIso={raceDateIso}
+                      showTargetBubble={relationshipWindow === "target"}
+                      includeZeroBaseline={relationshipIncludeZeroBaseline}
+                      onToggleYAxisBaseline={() => setRelationshipIncludeZeroBaseline((current) => !current)}
+                      detailLevel="full"
+                      onPointHover={showHover}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </article>
+        ) : (
+          <div className="fitnessOverviewGrid">
+            <button
+              type="button"
+              className={`fitnessOverviewCard bubbleInteractive ${focusedChart === "volume" ? "active" : ""}`}
+              onClick={() => setFocusedChart("volume")}
+            >
+              <div className="fitnessOverviewHeader">
+                <h3>Volume Trend + 4w Baseline</h3>
+                <span>Tap for detail</span>
+              </div>
+              <div className="fitnessChartScroll">
+                <div className="fitnessChartFrame">
+                  <VolumeTrendChart points={overviewWeeks} detailLevel="compact" onPointHover={() => undefined} />
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              className={`fitnessOverviewCard bubbleInteractive ${focusedChart === "paceHrTrend" ? "active" : ""}`}
+              onClick={() => setFocusedChart("paceHrTrend")}
+            >
+              <div className="fitnessOverviewHeader">
+                <h3>Pace and HR Trends</h3>
+                <span>Tap for detail</span>
+              </div>
+              <div className="fitnessChartScroll">
+                <div className="fitnessChartFrame">
+                  <PaceHrTrendChart points={overviewWeeks} detailLevel="compact" onPointHover={() => undefined} />
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              className={`fitnessOverviewCard bubbleInteractive ${focusedChart === "relationship" ? "active" : ""}`}
+              onClick={() => setFocusedChart("relationship")}
+            >
+              <div className="fitnessOverviewHeader">
+                <h3>Pace vs HR Relationship</h3>
+                <span>Tap for detail</span>
+              </div>
+              <div className="fitnessChartScroll">
+                <div className="fitnessChartFrame">
+                  <PaceHrScatterChart
+                    runDays={filterRunDaysByWindow(runDays, "6m")}
+                    raceDateIso={raceDateIso}
+                    showTargetBubble={false}
+                    includeZeroBaseline={false}
+                    detailLevel="compact"
+                    onPointHover={() => undefined}
+                  />
+                </div>
+              </div>
+            </button>
           </div>
-          <div className="fitnessChartScroll">
-            <div className="fitnessChartFrame">
-              <PaceHrScatterChart
-                runDays={filteredRunDays}
-                raceDateIso={raceDateIso}
-                showTargetBubble={relationshipWindow === "target"}
-                onPointHover={showHover}
-              />
-            </div>
-          </div>
-        </article>
+        )}
+
         {hoverState ? (
           <div
             className="chartHoverBox"
@@ -211,16 +334,18 @@ export function FitnessInsightsTab({
 
 function VolumeTrendChart({
   points,
+  detailLevel,
   onPointHover
 }: {
   points: WeeklyFitnessPoint[];
+  detailLevel: DetailLevel;
   onPointHover: (event: MouseEvent<SVGElement>, title: string, lines: string[]) => void;
 }): JSX.Element {
   if (points.length < 2) {
     return <p className="chartEmptyState">Add more completed weeks to render a trend.</p>;
   }
-  const width = 680;
-  const height = 210;
+  const width = detailLevel === "full" ? 980 : 560;
+  const height = detailLevel === "full" ? 260 : 170;
   const padX = 34;
   const padY = 20;
   const innerW = width - padX * 2;
@@ -228,8 +353,8 @@ function VolumeTrendChart({
   const maxVolume = Math.max(1, ...points.map((point) => point.volumeMiles));
   const stepX = innerW / Math.max(1, points.length - 1);
   const rolling = movingAverage(points.map((point) => point.volumeMiles), 4);
-  const xTickStep = Math.max(1, Math.floor(points.length / 6));
-  const yTickRatios = [0, 0.25, 0.5, 0.75, 1];
+  const xTickStep = detailLevel === "full" ? Math.max(1, Math.floor(points.length / 8)) : Math.max(1, Math.floor(points.length / 3));
+  const yTickRatios = detailLevel === "full" ? [0, 0.25, 0.5, 0.75, 1] : [0, 0.5, 1];
 
   const getX = (index: number): number => padX + index * stepX;
   const getY = (value: number): number => padY + innerH - (value / maxVolume) * innerH;
@@ -244,9 +369,11 @@ function VolumeTrendChart({
         return (
           <g key={ratio}>
             <line className="fitnessGridLine" x1={padX} y1={y} x2={width - padX} y2={y} />
-            <text className="fitnessTickLabel" x={padX - 6} y={y + 3} textAnchor="end">
-              {formatMiles(value)}
-            </text>
+            {detailLevel === "full" ? (
+              <text className="fitnessTickLabel" x={padX - 6} y={y + 3} textAnchor="end">
+                {formatMiles(value)}
+              </text>
+            ) : null}
           </g>
         );
       })}
@@ -257,7 +384,7 @@ function VolumeTrendChart({
         const x = getX(index);
         return (
           <text key={`${point.weekStartIso}-xtick`} className="fitnessTickLabel" x={x} y={height - 10} textAnchor="middle">
-            {index + 1}
+            {formatShortDate(point.weekStartIso)}
           </text>
         );
       })}
@@ -273,29 +400,56 @@ function VolumeTrendChart({
             cy={getY(point.volumeMiles)}
             r="2.8"
             onMouseMove={(event) =>
-              onPointHover(event, weekLabel, [
-                `Volume: ${formatMiles(point.volumeMiles)} mi`,
-                `4w baseline: ${formatMiles(rolling[index])} mi`
-              ])
+              onPointHover(
+                event,
+                weekLabel,
+                detailLevel === "full"
+                  ? [
+                      `Volume: ${formatMiles(point.volumeMiles)} mi`,
+                      `4w baseline: ${formatMiles(rolling[index])} mi`,
+                      `Delta: ${formatSignedMiles(point.volumeMiles - rolling[index])}`
+                    ]
+                  : [`Volume: ${formatMiles(point.volumeMiles)} mi`]
+              )
             }
+            onClick={(event) => {
+              event.stopPropagation();
+              onPointHover(
+                event,
+                weekLabel,
+                detailLevel === "full"
+                  ? [
+                      `Volume: ${formatMiles(point.volumeMiles)} mi`,
+                      `4w baseline: ${formatMiles(rolling[index])} mi`,
+                      `Delta: ${formatSignedMiles(point.volumeMiles - rolling[index])}`
+                    ]
+                  : [`Volume: ${formatMiles(point.volumeMiles)} mi`]
+              );
+            }}
           />
         );
       })}
-      <text className="fitnessAxisLabel" x={width / 2} y={height - 2} textAnchor="middle">
-        Week Index
-      </text>
-      <text className="fitnessAxisLabel" x={11} y={height / 2} transform={`rotate(-90 11 ${height / 2})`} textAnchor="middle">
-        Volume (mi)
-      </text>
+      {detailLevel === "full" ? (
+        <>
+          <text className="fitnessAxisLabel" x={width / 2} y={height - 2} textAnchor="middle">
+            Week Start Date
+          </text>
+          <text className="fitnessAxisLabel" x={11} y={height / 2} transform={`rotate(-90 11 ${height / 2})`} textAnchor="middle">
+            Volume (mi)
+          </text>
+        </>
+      ) : null}
     </svg>
   );
 }
 
 function PaceHrTrendChart({
   points,
+  detailLevel,
   onPointHover
 }: {
   points: WeeklyFitnessPoint[];
+  detailLevel: DetailLevel;
   onPointHover: (event: MouseEvent<SVGElement>, title: string, lines: string[]) => void;
 }): JSX.Element {
   const valid = points.filter((point) => point.avgPaceSecondsPerMile != null && point.avgHrBpm != null);
@@ -303,8 +457,8 @@ function PaceHrTrendChart({
     return <p className="chartEmptyState">Need split data across multiple weeks.</p>;
   }
 
-  const width = 680;
-  const height = 210;
+  const width = detailLevel === "full" ? 980 : 560;
+  const height = detailLevel === "full" ? 260 : 180;
   const padX = 34;
   const padY = 20;
   const innerW = width - padX * 2;
@@ -314,7 +468,7 @@ function PaceHrTrendChart({
   const hrMin = 120;
   const hrMax = 180;
   const stepX = innerW / Math.max(1, valid.length - 1);
-  const xTickStep = Math.max(1, Math.floor(valid.length / 6));
+  const xTickStep = detailLevel === "full" ? Math.max(1, Math.floor(valid.length / 8)) : Math.max(1, Math.floor(valid.length / 3));
   const paceTicks = [6 * 60, 7 * 60, 8 * 60, 9 * 60, 10 * 60];
   const hrTicks = [120, 135, 150, 165, 180];
 
@@ -330,7 +484,7 @@ function PaceHrTrendChart({
         const y = padY + innerH * ratio;
         return <line key={ratio} className="fitnessGridLine" x1={padX} y1={y} x2={width - padX} y2={y} />;
       })}
-      {paceTicks.map((value) => {
+      {(detailLevel === "full" ? paceTicks : [6 * 60, 8 * 60, 10 * 60]).map((value) => {
         const y = getPaceY(value);
         return (
           <text key={`pace-${value}`} className="fitnessTickLabel fitnessPaceTick" x={padX - 6} y={y + 3} textAnchor="end">
@@ -338,7 +492,7 @@ function PaceHrTrendChart({
           </text>
         );
       })}
-      {hrTicks.map((value) => {
+      {(detailLevel === "full" ? hrTicks : [120, 150, 180]).map((value) => {
         const y = getHrY(value);
         return (
           <text key={`hr-${value}`} className="fitnessTickLabel fitnessHrTick" x={width - padX + 6} y={y + 3} textAnchor="start">
@@ -352,7 +506,7 @@ function PaceHrTrendChart({
         }
         return (
           <text key={`${point.weekStartIso}-xtick`} className="fitnessTickLabel" x={getX(index)} y={height - 10} textAnchor="middle">
-            {index + 1}
+            {formatShortDate(point.weekStartIso)}
           </text>
         );
       })}
@@ -375,6 +529,13 @@ function PaceHrTrendChart({
                   `HR: ${Math.round(hr)} bpm`
                 ])
               }
+              onClick={(event) => {
+                event.stopPropagation();
+                onPointHover(event, `${weekLabel} (Pace)`, [
+                  `Pace: ${formatPace(pace)}/mi`,
+                  `HR: ${Math.round(hr)} bpm`
+                ]);
+              }}
             />
             <circle
               className="fitnessHrPoint"
@@ -387,25 +548,42 @@ function PaceHrTrendChart({
                   `Pace: ${formatPace(pace)}/mi`
                 ])
               }
+              onClick={(event) => {
+                event.stopPropagation();
+                onPointHover(event, `${weekLabel} (HR)`, [
+                  `HR: ${Math.round(hr)} bpm`,
+                  `Pace: ${formatPace(pace)}/mi`
+                ]);
+              }}
             />
           </g>
         );
       })}
-      <text className="fitnessAxisLabel" x={width / 2} y={height - 2} textAnchor="middle">
-        Week Index
-      </text>
-      <text className="fitnessAxisLabel fitnessPaceTick" x={11} y={height / 2} transform={`rotate(-90 11 ${height / 2})`} textAnchor="middle">
-        Pace (min/mi)
-      </text>
-      <text
-        className="fitnessAxisLabel fitnessHrTick"
-        x={width - 11}
-        y={height / 2}
-        transform={`rotate(90 ${width - 11} ${height / 2})`}
-        textAnchor="middle"
-      >
-        HR (bpm)
-      </text>
+      {detailLevel === "full" ? (
+        <>
+          <text className="fitnessAxisLabel" x={width / 2} y={height - 2} textAnchor="middle">
+            Week Start Date
+          </text>
+          <text
+            className="fitnessAxisLabel fitnessPaceTick"
+            x={11}
+            y={height / 2}
+            transform={`rotate(-90 11 ${height / 2})`}
+            textAnchor="middle"
+          >
+            Pace (min/mi)
+          </text>
+          <text
+            className="fitnessAxisLabel fitnessHrTick"
+            x={width - 11}
+            y={height / 2}
+            transform={`rotate(90 ${width - 11} ${height / 2})`}
+            textAnchor="middle"
+          >
+            HR (bpm)
+          </text>
+        </>
+      ) : null}
     </svg>
   );
 }
@@ -414,11 +592,17 @@ function PaceHrScatterChart({
   runDays,
   raceDateIso,
   showTargetBubble,
+  includeZeroBaseline,
+  onToggleYAxisBaseline,
+  detailLevel,
   onPointHover
 }: {
   runDays: RunDayPoint[];
   raceDateIso: string;
   showTargetBubble: boolean;
+  includeZeroBaseline: boolean;
+  onToggleYAxisBaseline?: () => void;
+  detailLevel: DetailLevel;
   onPointHover: (event: MouseEvent<SVGElement>, title: string, lines: string[]) => void;
 }): JSX.Element {
   const hasTargetDate = /^\d{4}-\d{2}-\d{2}$/.test(raceDateIso);
@@ -437,8 +621,8 @@ function PaceHrScatterChart({
   if (runDays.length < 3 && !targetPoint) {
     return <p className="chartEmptyState">Need more completed runs with split data.</p>;
   }
-  const width = 980;
-  const height = 290;
+  const width = detailLevel === "full" ? 980 : 640;
+  const height = detailLevel === "full" ? 290 : 220;
   const padX = 52;
   const padY = 26;
   const innerW = width - padX * 2;
@@ -452,8 +636,11 @@ function PaceHrScatterChart({
   if (targetPoint) {
     relationshipValues.push(targetPoint.beatsPerMile);
   }
-  const valueMin = Math.floor((Math.min(...relationshipValues) - 6) / 2) * 2;
-  const valueMax = Math.ceil((Math.max(...relationshipValues) + 6) / 2) * 2;
+  const derivedValueMin = Math.floor((Math.min(...relationshipValues) - 6) / 2) * 2;
+  const derivedValueMax = Math.ceil((Math.max(...relationshipValues) + 6) / 2) * 2;
+  const valueMin = includeZeroBaseline ? 0 : derivedValueMin;
+  const valueMax = Math.max(valueMin + 2, derivedValueMax);
+  const valueRange = Math.max(1, valueMax - valueMin);
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => valueMin + ratio * (valueMax - valueMin));
   const rolling = movingAverage(relationshipSeries.map((day) => day.beatsPerMile), 5);
   const runDateMs = relationshipSeries.map((point) => fromIsoDate(point.isoDate).getTime());
@@ -466,10 +653,13 @@ function PaceHrScatterChart({
       ? Math.max(...domainDateMs)
       : Math.max(todayMs, ...(domainDateMs.length > 0 ? domainDateMs : [todayMs]));
   const domainSpanMs = Math.max(24 * 60 * 60 * 1000, domainMaxMs - domainMinMs);
-  const xTickStep = Math.max(1, Math.floor(Math.max(1, relationshipSeries.length) / 6));
+  const xTickStep =
+    detailLevel === "full"
+      ? Math.max(1, Math.floor(Math.max(1, relationshipSeries.length) / 8))
+      : Math.max(1, Math.floor(Math.max(1, relationshipSeries.length) / 3));
 
   const getXForDateMs = (dateMs: number): number => padX + ((dateMs - domainMinMs) / domainSpanMs) * innerW;
-  const getY = (value: number): number => padY + innerH - ((value - valueMin) / (valueMax - valueMin)) * innerH;
+  const getY = (value: number): number => padY + innerH - ((value - valueMin) / valueRange) * innerH;
   const relationshipPath = relationshipSeries
     .map((point) => `${getXForDateMs(fromIsoDate(point.isoDate).getTime())},${getY(point.beatsPerMile)}`)
     .join(" ");
@@ -510,14 +700,18 @@ function PaceHrScatterChart({
           </text>
         );
       })}
-      {targetPoint && targetDateMs != null ? (
+      {detailLevel === "full" && targetPoint && targetDateMs != null ? (
         <text className="fitnessTickLabel fitnessTargetTick" x={getXForDateMs(targetDateMs)} y={height - 24} textAnchor="middle">
           {formatShortDate(targetPoint.isoDate)}
         </text>
       ) : null}
 
-      {relationshipSeries.length > 1 ? <polyline className="fitnessRelationshipSeries" points={relationshipPath} /> : null}
-      {relationshipSeries.length > 1 ? <polyline className="fitnessRelationshipTrend" points={rollingPath} /> : null}
+      {detailLevel === "full" && relationshipSeries.length > 1 ? (
+        <polyline className="fitnessRelationshipSeries" points={relationshipPath} />
+      ) : null}
+      {detailLevel === "full" && relationshipSeries.length > 1 ? (
+        <polyline className="fitnessRelationshipTrend" points={rollingPath} />
+      ) : null}
       {relationshipSeries.map((day, index) => (
         <g key={day.isoDate}>
           <circle
@@ -527,16 +721,38 @@ function PaceHrScatterChart({
             r={Math.max(3, Math.min(8, day.miles / 2))}
             style={{ opacity: 0.82 }}
             onMouseMove={(event) =>
-              onPointHover(event, formatDayLabel(day.isoDate), [
-                `Run order: ${index + 1}/${chronologicalRuns.length}`,
-                `Pace: ${formatPace(day.avgPaceSecondsPerMile)}/mi`,
-                `HR: ${Math.round(day.avgHrBpm)} bpm`,
-                `Miles: ${formatMiles(day.miles)}`,
-                `Relationship: ${Math.round(day.beatsPerMile)} beats/mile`
-              ])
+              onPointHover(
+                event,
+                formatDayLabel(day.isoDate),
+                detailLevel === "full"
+                  ? [
+                      `Run order: ${index + 1}/${chronologicalRuns.length}`,
+                      `Pace: ${formatPace(day.avgPaceSecondsPerMile)}/mi`,
+                      `HR: ${Math.round(day.avgHrBpm)} bpm`,
+                      `Miles: ${formatMiles(day.miles)}`,
+                      `Relationship: ${Math.round(day.beatsPerMile)} beats/mile`
+                    ]
+                  : [`Pace: ${formatPace(day.avgPaceSecondsPerMile)}/mi`, `HR: ${Math.round(day.avgHrBpm)} bpm`, `Miles: ${formatMiles(day.miles)}`]
+              )
             }
+            onClick={(event) => {
+              event.stopPropagation();
+              onPointHover(
+                event,
+                formatDayLabel(day.isoDate),
+                detailLevel === "full"
+                  ? [
+                      `Run order: ${index + 1}/${chronologicalRuns.length}`,
+                      `Pace: ${formatPace(day.avgPaceSecondsPerMile)}/mi`,
+                      `HR: ${Math.round(day.avgHrBpm)} bpm`,
+                      `Miles: ${formatMiles(day.miles)}`,
+                      `Relationship: ${Math.round(day.beatsPerMile)} beats/mile`
+                    ]
+                  : [`Pace: ${formatPace(day.avgPaceSecondsPerMile)}/mi`, `HR: ${Math.round(day.avgHrBpm)} bpm`, `Miles: ${formatMiles(day.miles)}`]
+              );
+            }}
           />
-          {index === chronologicalRuns.length - 1 ? (
+          {detailLevel === "full" && index === chronologicalRuns.length - 1 ? (
             <circle
               className="fitnessLatestPointRing"
               cx={getXForDateMs(fromIsoDate(day.isoDate).getTime())}
@@ -546,7 +762,7 @@ function PaceHrScatterChart({
           ) : null}
         </g>
       ))}
-      {targetPoint && targetDateMs != null ? (
+      {detailLevel === "full" && targetPoint && targetDateMs != null ? (
         <g>
           <circle
             className="fitnessTargetPoint"
@@ -562,6 +778,16 @@ function PaceHrScatterChart({
                 `Relationship: ${Math.round(targetPoint.beatsPerMile)} beats/mile`
               ])
             }
+            onClick={(event) => {
+              event.stopPropagation();
+              onPointHover(event, "Target Marathon Effort", [
+                `Date: ${formatDayLabel(targetPoint.isoDate)}`,
+                "Pace: 6:30/mi",
+                "HR: 140 bpm",
+                "Miles: 26",
+                `Relationship: ${Math.round(targetPoint.beatsPerMile)} beats/mile`
+              ]);
+            }}
           />
           <circle
             className="fitnessTargetPointRing"
@@ -571,12 +797,42 @@ function PaceHrScatterChart({
           />
         </g>
       ) : null}
-      <text className="fitnessAxisLabel" x={width / 2} y={height - 6} textAnchor="middle">
-        Date
-      </text>
-      <text className="fitnessAxisLabel" x={10} y={height / 2} transform={`rotate(-90 10 ${height / 2})`} textAnchor="middle">
-        Beats per Mile (HR x pace)
-      </text>
+      {detailLevel === "full" ? (
+        <>
+          {onToggleYAxisBaseline ? (
+            <rect
+              className="fitnessYAxisToggleTarget"
+              x={0}
+              y={padY}
+              width={padX + 8}
+              height={innerH}
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleYAxisBaseline();
+              }}
+            />
+          ) : null}
+          <text className="fitnessAxisLabel" x={width / 2} y={height - 6} textAnchor="middle">
+            Date
+          </text>
+          <text
+            className={`fitnessAxisLabel ${onToggleYAxisBaseline ? "fitnessYAxisToggleLabel" : ""}`}
+            x={10}
+            y={height / 2}
+            transform={`rotate(-90 10 ${height / 2})`}
+            textAnchor="middle"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleYAxisBaseline?.();
+            }}
+          >
+            Beats per Mile (HR x pace)
+          </text>
+          <text className="fitnessTickLabel fitnessYAxisHint" x={padX - 2} y={padY - 7} textAnchor="end">
+            {includeZeroBaseline ? "Y: 0 baseline (tap axis)" : "Y: data min (tap axis)"}
+          </text>
+        </>
+      ) : null}
     </svg>
   );
 }
@@ -735,14 +991,23 @@ function filterRunDaysByWindow(runDays: RunDayPoint[], window: RelationshipWindo
   });
 }
 
-function filterWeeksToRecentMonths(points: WeeklyFitnessPoint[], months: number): WeeklyFitnessPoint[] {
+function filterWeeksByWindow(points: WeeklyFitnessPoint[], window: WeeklyWindow): WeeklyFitnessPoint[] {
   if (points.length === 0) {
+    return points;
+  }
+  if (window === "all") {
     return points;
   }
   const today = new Date();
   const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const cutoff = new Date(endDate);
-  cutoff.setMonth(cutoff.getMonth() - Math.max(0, months));
+  if (window === "12m") {
+    cutoff.setFullYear(cutoff.getFullYear() - 1);
+  } else if (window === "6m") {
+    cutoff.setMonth(cutoff.getMonth() - 6);
+  } else {
+    cutoff.setMonth(cutoff.getMonth() - 3);
+  }
   return points.filter((point) => {
     const weekDate = fromIsoDate(point.weekStartIso);
     const weekMs = weekDate.getTime();
