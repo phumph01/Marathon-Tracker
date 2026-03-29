@@ -6,22 +6,31 @@ export interface ActivityCsvImport {
   splitPoints: MileSplitPoint[];
 }
 
-const LAPS_HEADER_ALIASES = ["laps", "lap"];
-const DISTANCE_HEADER_ALIASES = ["distancemi", "distance mi", "distance"];
-const PACE_HEADER_ALIASES = ["avg pacemin/mi", "avg pace", "pace"];
-const HEART_RATE_HEADER_ALIASES = ["avg hrbpm", "avg hr", "avg heart rate"];
+/** Keys after normalizeHeaderKey — order is most-specific first where it matters. */
+const LAPS_HEADER_KEYS = ["laps", "lap"];
+const DISTANCE_HEADER_KEYS = ["distancemi", "distancekm", "distancem", "distance"];
+const PACE_HEADER_KEYS = [
+  "avgpacemin/mi",
+  "avgpace",
+  "avgmovingpacemin/mi",
+  "movingpacemin/mi",
+  "pace",
+  "movingpace"
+];
+const HEART_RATE_HEADER_KEYS = ["avghrbpm", "avgheartrate", "avghr", "heartrate"];
 
 export function parseActivityCsv(csvText: string): ActivityCsvImport {
-  const rows = parseCsvRows(csvText);
+  const rows = parseCsvRows(stripUtf8Bom(csvText));
   if (rows.length < 2) {
     throw new Error("Activity CSV must include a header row and at least one lap row.");
   }
 
-  const headers = rows[0].map(normalizeHeader);
-  const lapsIndex = findHeaderIndex(headers, LAPS_HEADER_ALIASES);
-  const distanceIndex = findHeaderIndex(headers, DISTANCE_HEADER_ALIASES);
-  const paceIndex = findHeaderIndex(headers, PACE_HEADER_ALIASES);
-  const heartRateIndex = findHeaderIndex(headers, HEART_RATE_HEADER_ALIASES);
+  const headers = rows[0];
+  const headerKeys = headers.map(normalizeHeaderKey);
+  const lapsIndex = findHeaderIndexByKeys(headerKeys, LAPS_HEADER_KEYS);
+  const distanceIndex = findHeaderIndexByKeys(headerKeys, DISTANCE_HEADER_KEYS);
+  const paceIndex = findHeaderIndexByKeys(headerKeys, PACE_HEADER_KEYS);
+  const heartRateIndex = findHeaderIndexByKeys(headerKeys, HEART_RATE_HEADER_KEYS);
 
   if (lapsIndex < 0 || distanceIndex < 0) {
     throw new Error("Activity CSV is missing required Laps/Distance columns.");
@@ -136,12 +145,31 @@ function formatPace(secondsPerMile: number): string {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-function findHeaderIndex(headers: string[], aliases: string[]): number {
-  return headers.findIndex((header) => aliases.includes(header));
+/**
+ * Garmin and exports often split header text across lines inside quotes (e.g. "Distance\\nmi").
+ * Collapse all whitespace and compare a spaceless, lowercase key so old one-line headers
+ * ("Distancemi", "Avg Pacemin/mi") and new multi-line headers match the same keys.
+ */
+function normalizeHeaderKey(header: string): string {
+  return header
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[()]/g, "");
 }
 
-function normalizeHeader(header: string): string {
-  return header.trim().toLowerCase();
+function findHeaderIndexByKeys(headerKeys: string[], candidateKeys: string[]): number {
+  for (const candidate of candidateKeys) {
+    const idx = headerKeys.findIndex((key) => key === candidate);
+    if (idx >= 0) {
+      return idx;
+    }
+  }
+  return -1;
+}
+
+function stripUtf8Bom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
 function roundToTenth(value: number): number {
